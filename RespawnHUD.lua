@@ -207,6 +207,7 @@ local AimbotCore = (function()
     end)
 
     local ignoredPlayers = {} -- List of ignored player names
+    local ignoredTeams = {} -- List of ignored team names
 
     local function isTargetVisible(targetPart, character)
         local cameraPos = camera.CFrame.Position
@@ -264,6 +265,8 @@ local AimbotCore = (function()
                 pcall(function()
                     local shouldTarget = true
                     if isSameTeam(targetPlayer) then shouldTarget = false end
+                    if isSameTeam(targetPlayer) then shouldTarget = false end
+                    if targetPlayer.Team and ignoredTeams[targetPlayer.Team.Name] then shouldTarget = false end
                     if ignoredPlayers[targetPlayer.Name] then shouldTarget = false end
 
                     if shouldTarget and targetPlayer.Character and targetPlayer.Character:FindFirstChild("Head") and targetPlayer.Character:FindFirstChild("Humanoid") then
@@ -298,6 +301,8 @@ local AimbotCore = (function()
     end
     function AimbotCore:IgnorePlayer(name) ignoredPlayers[name] = true end
     function AimbotCore:UnignorePlayer(name) ignoredPlayers[name] = nil end
+    function AimbotCore:IgnoreTeam(name) ignoredTeams[name] = true end
+    function AimbotCore:UnignoreTeam(name) ignoredTeams[name] = nil end
     function AimbotCore:GetFOV() return getgenv().AimbotFOV or 100 end
     function AimbotCore:IsEnabled() return isEnabled end
 
@@ -1048,7 +1053,7 @@ function VoidLib:CreateWindow()
         local TabCorner = Instance.new("UICorner"); TabCorner.CornerRadius = UDim.new(0, 6); TabCorner.Parent = TabBtn
 
         local TabPage = Instance.new("ScrollingFrame")
-        TabPage.Size = UDim2.new(1, -10, 1, 0) -- Margin Right fixed by Size -10
+        TabPage.Size = UDim2.new(1, -10, 1, -10) -- Margin Right and Bottom fixed
         TabPage.Position = UDim2.new(0, 5, 0, 0) -- Margin Left
         TabPage.BackgroundTransparency = 1
         TabPage.BorderSizePixel = 0
@@ -1305,8 +1310,8 @@ function VoidLib:CreateWindow()
                             local newKey = input.KeyCode
                             BindBtn.Text = newKey.Name
                             BindBtn.TextColor3 = Themes.Text
+                            getgenv().IsBindingKey = false
                             conn:Disconnect()
-                            task.delay(0.2, function() getgenv().IsBindingKey = false end)
                             pcall(callback, newKey)
                         end
                     end)
@@ -1778,6 +1783,25 @@ end, function(name)
     AimbotCore:UnignorePlayer(name)
 end)
 table.insert(aimbotDependents, ignoreList)
+
+local function GetTeamsList()
+    local list = {}
+    -- Safety check for Teams service
+    local success, teams = pcall(function() return game:GetService("Teams"):GetTeams() end)
+    if success and teams then
+        for _, t in pairs(teams) do
+            table.insert(list, t.Name)
+        end
+    end
+    return list
+end
+
+local ignoreTeamList = AimbotGroup:InteractiveList("Ignorar Time", GetTeamsList, function(name)
+    AimbotCore:IgnoreTeam(name)
+end, function(name)
+    AimbotCore:UnignoreTeam(name)
+end)
+table.insert(aimbotDependents, ignoreTeamList)
 
 local fovS = AimbotGroup:Slider("Campo de Visão (FOV)", 20, 500, AimbotCore:GetFOV(), function(v)
     AimbotCore:SetFOV(v)
