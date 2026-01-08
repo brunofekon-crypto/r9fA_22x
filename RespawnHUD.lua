@@ -1063,6 +1063,28 @@ local BotCore = (function()
         end
     end
 
+    end
+
+    function BotCore:SetDistances(min, max)
+        Config.MinDistance = min
+        Config.MaxDistance = max
+        warn("[BotConfig] Distances updated: Min="..min.." Max="..max)
+    end
+    
+    function BotCore:GetDistances()
+        return Config.MinDistance, Config.MaxDistance
+    end
+
+    function BotCore:SetTarget(name)
+        if currentTargetName ~= name then
+            warn("[BotDebug] New Target: " .. tostring(name))
+            currentTargetName = name
+            currentWaypoints = nil
+            currentWaypointIndex = 0
+            wanderingTarget = nil -- Reset wander
+        end
+    end
+
     function BotCore:SetEnabled(state)
         warn("[BotDebug] SetEnabled called with state: " .. tostring(state))
         isEnabled = state
@@ -1077,40 +1099,16 @@ local BotCore = (function()
                 loopConnection:Disconnect()
                 loopConnection = nil
             end
-            if LocalPlayer.Character and getHumanoid(LocalPlayer.Character) then
-                 getHumanoid(LocalPlayer.Character):MoveTo(LocalPlayer.Character.HumanoidRootPart.Position)
-            end
-        end
-    end
-
-    function BotCore:SetTarget(name)
-        currentTargetName = name
-        -- Reset pathing state on target switch
-        currentWaypoints = nil
-        currentWaypointIndex = 0
-    end
-
-    function BotCore:SetEnabled(state)
-        isEnabled = state
-        if state then
-            if not loopConnection then
-                loopConnection = RunService.Heartbeat:Connect(UpdateBot)
-            end
-        else
-            if loopConnection then
-                loopConnection:Disconnect()
-                loopConnection = nil
-            end
-            -- Stop movement
             local char = LocalPlayer.Character
             if char and getHumanoid(char) then
-                getHumanoid(char):MoveTo(char.HumanoidRootPart.Position)
+                 getHumanoid(char):MoveTo(char.HumanoidRootPart.Position)
             end
         end
     end
 
     return BotCore
 end)()
+
 
 -- ==========================================
 -- VOIDWARE UI LIBRARY
@@ -1515,7 +1513,7 @@ function VoidLib:CreateWindow()
                 return ToggleObj
             end
             
-            function GroupObj:Slider(text, min, max, default, callback)
+            function GroupObj:Slider(text, min, max, default, callback, valueFormatter)
                 local SFrame = CreateElementFrame()
                 SFrame.Size = UDim2.new(1, 0, 0, 50)
                 
@@ -1530,10 +1528,12 @@ function VoidLib:CreateWindow()
                 SLab.TextXAlignment = Enum.TextXAlignment.Left
                 SLab.Parent = SFrame
                 
+                local formatter = valueFormatter or function(v) return tostring(v) end
+
                 local ValLab = Instance.new("TextLabel")
-                ValLab.Text = tostring(default)
-                ValLab.Size = UDim2.new(0, 40, 0, 20)
-                ValLab.Position = UDim2.new(1, -50, 0, 5)
+                ValLab.Text = formatter(default)
+                ValLab.Size = UDim2.new(0, 60, 0, 20) -- Maintained size increase for dual values
+                ValLab.Position = UDim2.new(1, -70, 0, 5)
                 ValLab.BackgroundTransparency = 1
                 ValLab.Font = Enum.Font.Gotham
                 ValLab.TextColor3 = Themes.TextDim
@@ -1562,7 +1562,7 @@ function VoidLib:CreateWindow()
                     local size = Track.AbsoluteSize.X
                     local percent = math.clamp((pos - rect) / size, 0, 1)
                     local val = math.floor(min + (max - min) * percent)
-                    ValLab.Text = tostring(val)
+                    ValLab.Text = formatter(val)
                     Fill.Size = UDim2.new(percent, 0, 1, 0)
                     pcall(callback, val)
                 end
@@ -2402,6 +2402,10 @@ end)
 BotGroup:Toggle("Ativar Bot (IA)", false, function(v)
     BotCore:SetEnabled(v)
 end)
+
+BotGroup:Slider("Distância (Min/Max)", 6, 30, 10, function(v)
+    BotCore:SetDistances(v, v+5)
+end, function(v) return v .. "/" .. (v+5) end)
 
 -- >>> TAB: CONFIGURAÇÕES
 local Settings = Win:Tab("Configs")
