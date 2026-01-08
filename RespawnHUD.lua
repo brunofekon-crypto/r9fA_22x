@@ -40,6 +40,7 @@ if not getgenv().AimbotFOV then getgenv().AimbotFOV = 100 end
 if not getgenv().AimbotEasing then getgenv().AimbotEasing = 1 end
 if getgenv().TeamCheck == nil then getgenv().TeamCheck = false end
 if getgenv().LegitMode == nil then getgenv().LegitMode = false end -- New Legit Mode
+if getgenv().CursorAim == nil then getgenv().CursorAim = false end -- New Cursor Aim
 if getgenv().KillAuraEnabled == nil then getgenv().KillAuraEnabled = false end -- Kill Aura
 if getgenv().ESPHealth == nil then getgenv().ESPHealth = false end
 if getgenv().ESPEnabled == nil then getgenv().ESPEnabled = false end
@@ -228,16 +229,16 @@ local AimbotCore = (function()
         local viewportPoint, onScreen = camera:WorldToViewportPoint(targetPart.Position)
         if not onScreen then return false end
         
-        local centerPos
+        local centerPoint
         if getgenv().CursorAim then
-             centerPos = UserInputService:GetMouseLocation()
+            centerPoint = UserInputService:GetMouseLocation()
         else
-             local viewportSize = camera.ViewportSize
-             centerPos = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+            local viewportSize = camera.ViewportSize
+            centerPoint = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
         end
 
         local targetPos = Vector2.new(viewportPoint.X, viewportPoint.Y)
-        local distance = (targetPos - centerPos).Magnitude
+        local distance = (targetPos - centerPoint).Magnitude
         local fov = getgenv().AimbotFOV or 100
         return distance <= fov
     end
@@ -246,31 +247,51 @@ local AimbotCore = (function()
         if not fovCircle or not isDrawingApiAvailable then return end
         local fov = getgenv().AimbotFOV or 100
         fovCircle.Visible = isEnabled
-        fovCircle.Radius = fov
         
         if getgenv().CursorAim then
-             fovCircle.Position = UserInputService:GetMouseLocation()
+            fovCircle.Position = UserInputService:GetMouseLocation()
         else
-             local viewportSize = camera.ViewportSize
-             fovCircle.Position = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+            local viewportSize = camera.ViewportSize
+            fovCircle.Position = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
         end
+        
+        fovCircle.Radius = fov
     end
 
     local function findNearestTarget()
         local nearestTarget = nil
         local nearestDistance = math.huge
+        local fov = getgenv().AimbotFOV or 100
+        
+        local centerPoint
+        if getgenv().CursorAim then
+            centerPoint = UserInputService:GetMouseLocation()
+        else
+            local viewportSize = camera.ViewportSize
+            centerPoint = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+        end
+
         for _, targetPlayer in pairs(Players:GetPlayers()) do
             if targetPlayer ~= player then
                 pcall(function()
                     local shouldTarget = true
                     if isSameTeam(targetPlayer) then shouldTarget = false end
+                    
                     if shouldTarget and targetPlayer.Character and targetPlayer.Character:FindFirstChild("Head") and targetPlayer.Character:FindFirstChild("Humanoid") then
-                        if not isTargetInFOV(targetPlayer.Character.Head) then return end
-                        local distance = (mouse.Hit.Position - targetPlayer.Character.PrimaryPart.Position).magnitude
-                        if distance < nearestDistance then
-                            if isTargetVisible(targetPlayer.Character.Head, targetPlayer.Character) and targetPlayer.Character.Humanoid.Health > 0 then
-                                nearestTarget = targetPlayer
-                                nearestDistance = distance
+                        -- Check Visibility first
+                        if isTargetVisible(targetPlayer.Character.Head, targetPlayer.Character) and targetPlayer.Character.Humanoid.Health > 0 then
+                            
+                            -- Calculate 2D Distance
+                            local viewportPoint, onScreen = camera:WorldToViewportPoint(targetPlayer.Character.Head.Position)
+                            
+                            if onScreen then
+                                local targetPos = Vector2.new(viewportPoint.X, viewportPoint.Y)
+                                local dist2D = (targetPos - centerPoint).Magnitude
+                                
+                                if dist2D <= fov and dist2D < nearestDistance then
+                                    nearestTarget = targetPlayer
+                                    nearestDistance = dist2D
+                                end
                             end
                         end
                     end
@@ -1484,8 +1505,12 @@ local tCheck = AimbotGroup:Toggle("Ignorar Aliados", getgenv().TeamCheck, functi
 end)
 table.insert(aimbotDependents, tCheck)
 
-local legitT = AimbotGroup:Toggle("Modo Legit (Random Part)", getgenv().LegitMode, function(v)
+local legitT = AimbotGroup:Toggle("Modo Legit", getgenv().LegitMode, function(v)
     getgenv().LegitMode = v
+end)
+
+AimbotGroup:Toggle("Cursor Aim", getgenv().CursorAim, function(v)
+    getgenv().CursorAim = v
 end)
 table.insert(aimbotDependents, legitT)
 
@@ -1504,11 +1529,6 @@ local isAimbotEnabled = AimbotCore:IsEnabled()
 for _, frame in pairs(aimbotDependents) do
     frame.Visible = isAimbotEnabled
 end
-
-local CursorAimGroup = Combat:Group("Cursor Aim")
-CursorAimGroup:Toggle("Ativar Cursor Aim", getgenv().CursorAim, function(v)
-    getgenv().CursorAim = v
-end)
 
 local KillAuraGroup = Combat:Group("Kill Aura")
 KillAuraGroup:Toggle("Kill Player(s)", KillAuraCore:IsEnabled(), function(v)
