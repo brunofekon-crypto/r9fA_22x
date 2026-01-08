@@ -2318,7 +2318,8 @@ local function GetPlayersList()
     return list
 end
 
-local botTargetDropdown = BotGroup:Dropdown("Alvo (Target)", {"Nenhum"}, function(v)
+local botTargetDropdown = BotGroup:Dropdown("Alvo (Target)", {"Nenhum"}, "Nenhum", function(v)
+    warn("[UI] Dropdown selected: " .. tostring(v))
     BotCore:SetTarget(v)
 end)
 
