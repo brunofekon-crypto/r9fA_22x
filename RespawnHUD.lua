@@ -1070,6 +1070,11 @@ local BotCore = (function()
         Config.MaxDistance = max
         warn("[BotConfig] Distances updated: Min="..min.." Max="..max)
     end
+
+    function BotCore:SetTeleportDistance(dist)
+        Config.TeleportDistance = dist
+        warn("[BotConfig] Teleport distance set to: " .. dist)
+    end
     
     function BotCore:GetDistances()
         return Config.MinDistance, Config.MaxDistance
@@ -2406,6 +2411,10 @@ end)
 BotGroup:Slider("Distância (Min/Max)", 6, 30, 10, function(v)
     BotCore:SetDistances(v, v+5)
 end, function(v) return v .. "/" .. (v+5) end)
+
+BotGroup:Slider("Teleporte (Max Dist)", 35, 500, 120, function(v)
+    BotCore:SetTeleportDistance(v)
+end)
 
 -- >>> TAB: CONFIGURAÇÕES
 local Settings = Win:Tab("Configs")
