@@ -388,8 +388,14 @@ local KillAuraCore = (function()
     local KillAura = {}
     local player = Players.LocalPlayer
     local isEnabled = false
+    local targetMode = "Todos" -- "Todos", "Amigos", "PlayerName"
 
     local function isSameTeam(targetPlayer)
+        -- TeamCheck only applies to "Todos" mode usually, or if explicitly requested.
+        -- User asked: "Amigos" -> Target Friends. "Specific" -> Target Specific.
+        -- So for "Todos", we respect TeamCheck.
+        if targetMode ~= "Todos" then return false end
+        
         if not getgenv().TeamCheck then return false end
         if player.Team and targetPlayer.Team then return player.Team == targetPlayer.Team end
         if player.TeamColor and targetPlayer.TeamColor then return player.TeamColor == targetPlayer.TeamColor end
@@ -403,13 +409,30 @@ local KillAuraCore = (function()
         if not myRoot then return nil end
 
         for _, targetPlayer in pairs(Players:GetPlayers()) do
-            if targetPlayer ~= player and not isSameTeam(targetPlayer) then
-                local char = targetPlayer.Character
-                if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
-                    local dist = (char.HumanoidRootPart.Position - myRoot.Position).Magnitude
-                    if dist < nearestDistance then
-                        nearestDistance = dist
-                        nearestTarget = targetPlayer
+            if targetPlayer ~= player then
+                local shouldCheck = false
+                
+                -- FILTERING LOGIC
+                if targetMode == "Todos" then
+                    if not isSameTeam(targetPlayer) then shouldCheck = true end
+                elseif targetMode == "Amigos" then
+                    if player:IsFriendsWith(targetPlayer.UserId) then shouldCheck = true end
+                else
+                    -- Specific Player
+                    if targetPlayer.Name == targetMode or targetPlayer.DisplayName == targetMode then
+                        shouldCheck = true 
+                    end
+                end
+
+                if shouldCheck then
+                    local char = targetPlayer.Character
+                    if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
+                        local dist = (char.HumanoidRootPart.Position - myRoot.Position).Magnitude
+                        -- For specific player, distance doesn't matter (we always want them), but used for nearest if multiple match (unlikely)
+                        if dist < nearestDistance then
+                            nearestDistance = dist
+                            nearestTarget = targetPlayer
+                        end
                     end
                 end
             end
@@ -453,6 +476,10 @@ local KillAuraCore = (function()
     function KillAura:SetEnabled(enabled)
         isEnabled = enabled
         if getgenv then getgenv().KillAuraEnabled = enabled end
+    end
+    function KillAura:SetTargetMode(mode)
+        targetMode = mode or "Todos"
+        currentTarget = nil -- Reset target logic to force rescanning
     end
     function KillAura:IsEnabled() return isEnabled end
     if getgenv then isEnabled = getgenv().KillAuraEnabled or false else isEnabled = false end
@@ -1240,6 +1267,129 @@ function VoidLib:CreateWindow()
                 return BFrame
             end
             
+            function GroupObj:Dropdown(text, options, default, callback)
+                local DFrame = CreateElementFrame()
+                DFrame.Size = UDim2.new(1, 0, 0, 50) -- Default height closed
+                DFrame.ClipsDescendants = true
+                DFrame.ZIndex = 5 -- Higher ZIndex for dropdown
+
+                local DLab = Instance.new("TextLabel")
+                DLab.Text = text
+                DLab.Size = UDim2.new(1, -10, 0, 20)
+                DLab.Position = UDim2.new(0, 10, 0, 5)
+                DLab.BackgroundTransparency = 1
+                DLab.Font = Enum.Font.GothamMedium
+                DLab.TextColor3 = Themes.Text
+                DLab.TextSize = 13
+                DLab.TextXAlignment = Enum.TextXAlignment.Left
+                DLab.Parent = DFrame
+                
+                local currentOption = default or options[1] or "..."
+                
+                local DropBtn = Instance.new("TextButton")
+                DropBtn.Size = UDim2.new(1, -20, 0, 20)
+                DropBtn.Position = UDim2.new(0, 10, 0, 25)
+                DropBtn.BackgroundColor3 = Color3.fromRGB(45,45,50)
+                DropBtn.Text = "   " .. tostring(currentOption)
+                DropBtn.Font = Enum.Font.Gotham
+                DropBtn.TextSize = 12
+                DropBtn.TextColor3 = Themes.TextDim
+                DropBtn.TextXAlignment = Enum.TextXAlignment.Left
+                DropBtn.Parent = DFrame
+                local DC = Instance.new("UICorner"); DC.CornerRadius = UDim.new(0, 4); DC.Parent = DropBtn
+                
+                local Arrow = Instance.new("TextLabel")
+                Arrow.Text = "v"
+                Arrow.Size = UDim2.new(0, 20, 1, 0)
+                Arrow.Position = UDim2.new(1, -20, 0, 0)
+                Arrow.BackgroundTransparency = 1
+                Arrow.TextColor3 = Themes.TextDim
+                Arrow.Font = Enum.Font.GothamBold
+                Arrow.Parent = DropBtn
+
+                -- Container for list
+                local ListFrame = Instance.new("ScrollingFrame")
+                ListFrame.Size = UDim2.new(1, -20, 0, 100)
+                ListFrame.Position = UDim2.new(0, 10, 0, 55) -- Under the button
+                ListFrame.BackgroundColor3 = Color3.fromRGB(40,40,45)
+                ListFrame.BorderSizePixel = 0
+                ListFrame.ScrollBarThickness = 2
+                ListFrame.Visible = false
+                ListFrame.ZIndex = 10
+                ListFrame.Parent = DFrame
+                local LC = Instance.new("UICorner"); LC.CornerRadius = UDim.new(0, 4); LC.Parent = ListFrame
+                local LPad = Instance.new("UIPadding"); LPad.PaddingTop = UDim.new(0,5); LPad.PaddingLeft = UDim.new(0,5); LPad.Parent = ListFrame
+                local LLayout = Instance.new("UIListLayout"); LLayout.Padding = UDim.new(0, 2); LLayout.SortOrder = Enum.SortOrder.LayoutOrder; LLayout.Parent = ListFrame
+
+                local isOpen = false
+                
+                local DropdownObj = {}
+
+                -- Function to refresh the list elements
+                function DropdownObj:Refresh(newOptions)
+                    options = newOptions
+                    -- Clear existing
+                    for _, child in pairs(ListFrame:GetChildren()) do
+                        if child:IsA("TextButton") then child:Destroy() end
+                    end
+                    
+                    -- Rebuild
+                    for i, opt in pairs(options) do
+                        local OptBtn = Instance.new("TextButton")
+                        OptBtn.Size = UDim2.new(1, -10, 0, 20)
+                        OptBtn.BackgroundTransparency = 1
+                        OptBtn.Text = tostring(opt)
+                        OptBtn.TextColor3 = Themes.TextDim
+                        OptBtn.Font = Enum.Font.Gotham
+                        OptBtn.TextSize = 12
+                        OptBtn.TextXAlignment = Enum.TextXAlignment.Left
+                        OptBtn.ZIndex = 11
+                        OptBtn.Parent = ListFrame
+                        
+                        OptBtn.MouseButton1Click:Connect(function()
+                            currentOption = opt
+                            DropBtn.Text = "   " .. tostring(opt)
+                            pcall(callback, opt)
+                            -- Close
+                            isOpen = false
+                            ListFrame.Visible = false
+                            TweenService:Create(Arrow, TweenInfo.new(0.2), {Rotation = 0}):Play()
+                            TweenService:Create(DFrame, TweenInfo.new(0.3), {Size = UDim2.new(1, 0, 0, 50)}):Play()
+                            
+                            -- Notify Group Layout Update
+                            task.delay(0.3, function() 
+                                if Container then 
+                                    -- Trigger resize of container if needed, tricky with nested layouts
+                                    -- Usually just changing DFrame size handles it if Layout is listening
+                                end
+                            end)
+                        end)
+                    end
+                    ListFrame.CanvasSize = UDim2.new(0, 0, 0, LLayout.AbsoluteContentSize.Y + 10)
+                end
+
+                DropBtn.MouseButton1Click:Connect(function()
+                    isOpen = not isOpen
+                    if isOpen then
+                        ListFrame.Visible = true
+                        TweenService:Create(Arrow, TweenInfo.new(0.2), {Rotation = 180}):Play()
+                        TweenService:Create(DFrame, TweenInfo.new(0.3), {Size = UDim2.new(1, 0, 0, 160)}):Play() -- Expand
+                    else
+                        ListFrame.Visible = false
+                        TweenService:Create(Arrow, TweenInfo.new(0.2), {Rotation = 0}):Play()
+                        TweenService:Create(DFrame, TweenInfo.new(0.3), {Size = UDim2.new(1, 0, 0, 50)}):Play() -- Collapse
+                    end
+                end)
+                
+                -- Init
+                DropdownObj:Refresh(options)
+                
+                -- Keep selection valid if not in new options?
+                -- For 'Todos' logic, we assume it's always there.
+                
+                return DropdownObj
+            end
+
             return GroupObj
         end
 
@@ -1347,6 +1497,31 @@ local KillAuraGroup = Combat:Group("Kill Aura")
 KillAuraGroup:Toggle("Kill Player(s)", KillAuraCore:IsEnabled(), function(v)
     KillAuraCore:SetEnabled(v)
 end)
+
+local function GetPlayersList()
+    local list = {"Todos", "Amigos"}
+    for _, p in pairs(game:GetService("Players"):GetPlayers()) do
+        if p ~= game:GetService("Players").LocalPlayer then
+            table.insert(list, p.Name)
+        end
+    end
+    return list
+end
+
+local TargetDrop = KillAuraGroup:Dropdown("Nome Kill (Alvo)", GetPlayersList(), "Todos", function(val)
+    KillAuraCore:SetTargetMode(val)
+end)
+
+-- Auto Update Dropdown
+task.spawn(function()
+    while task.wait(5) do
+        -- Only refresh if menu is visible? Optimization.
+        -- But user might verify while opening.
+        TargetDrop:Refresh(GetPlayersList())
+    end
+end)
+game:GetService("Players").PlayerAdded:Connect(function() TargetDrop:Refresh(GetPlayersList()) end)
+game:GetService("Players").PlayerRemoving:Connect(function() TargetDrop:Refresh(GetPlayersList()) end)
 
 -- >>> TAB: VISUAL
 local Visual = Win:Tab("Visual")
