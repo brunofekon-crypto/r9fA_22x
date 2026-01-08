@@ -860,64 +860,105 @@ local BotCore = (function()
     end
 
     local lastDebugPrint = 0
-    local function UpdateBot()
-        if not isEnabled then return end
-        
-        -- Heartbeat Debug (Every 1s)
-        if tick() - lastDebugPrint > 1 then
-            warn("[BotHeartbeat] Active. Target: " .. tostring(currentTargetName))
-            lastDebugPrint = tick()
+    local wanderingTarget = nil
+    local wanderWaitTime = 0
+    local lastWanderTime = 0
+
+    function BotCore:SetTarget(name)
+        if currentTargetName ~= name then
+            warn("[BotDebug] New Target: " .. tostring(name))
+            currentTargetName = name
+            currentWaypoints = nil
+            currentWaypointIndex = 0
+            wanderingTarget = nil -- Reset wander
+        end
+    end
+
+    -- 3-Ray Obstacle Avoidance (Steering)
+    local function GetObstacleAvoidanceVector(rootPart)
+        local fwd = rootPart.CFrame.LookVector
+        local right = rootPart.CFrame.RightVector
+        local origin = rootPart.Position
+
+        -- Rays: Center, Left (45), Right (45)
+        local rays = {
+            center = fwd,
+            left = (fwd - right).Unit,
+            right = (fwd + right).Unit
+        }
+
+        local rayParams = RaycastParams.new()
+        rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+        local hits = {}
+        for dir, vec in pairs(rays) do
+            local result = workspace:Raycast(origin, vec * Config.RaycastDistance, rayParams)
+            if result then hits[dir] = true end
         end
 
-        if not currentTargetName or currentTargetName == "Nenhum" then 
-            return 
+        -- Logic: If center blocked, steer to clear side
+        if hits.center then
+            if not hits.left and not hits.right then
+                -- Both sides clear, random choice or bias right
+                return rays.right * 0.5 -- Steer right
+            elseif not hits.left then
+                return rays.left * 0.8 -- Steer left hard
+            elseif not hits.right then
+                return rays.right * 0.8 -- Steer right hard
+            else
+                -- All blocked: Jump!
+                return "JUMP"
+            end
         end
+        
+        return nil -- No correction needed
+    end
+
+    local function GetRandomWanderPoint(center)
+        local rad = math.random(5, 15)
+        local angle = math.rad(math.random(0, 360))
+        local offX = math.cos(angle) * rad
+        local offZ = math.sin(angle) * rad
+        return center + Vector3.new(offX, 0, offZ)
+    end
+
+    local function UpdateBot()
+        if not isEnabled or not currentTargetName or currentTargetName == "Nenhum" then return end
         
         local targetPlr = Players:FindFirstChild(currentTargetName)
-        if not targetPlr then 
-            warn("[BotError] Target player not found in Players service: " .. tostring(currentTargetName))
-            return 
-        end
-        
-        if not targetPlr.Character then 
-            -- warn("[BotInfo] Target has no character (dead?)")
-            return 
-        end
-        
+        if not targetPlr or not targetPlr.Character then return end
+
         local myChar = LocalPlayer.Character
         if not myChar then return end
         local myRoot = getRoot(myChar)
         local targetRoot = getRoot(targetPlr.Character)
         local myHum = getHumanoid(myChar)
         
-        if not myRoot then 
-            warn("[BotError] Local RootPart missing") 
-            return 
-        end
-        if not targetRoot then
-             -- Silent return if target root missing (e.g. just spawned)
-             return
-        end
-        if not myHum then
-            warn("[BotError] Local Humanoid missing")
-            return
-        end
-        
+        if not myRoot or not targetRoot or not myHum then return end
+
         local dist = (myRoot.Position - targetRoot.Position).Magnitude
         
-        -- 1. Teleport if too far
+        -- Heartbeat Log (Throttled)
+        if tick() - lastDebugPrint > 2 then
+            -- warn("[BotStatus] Dist: " .. math.floor(dist) .. " | State: " .. (dist > Config.MaxDistance and "CHASE" or "IDLE"))
+            lastDebugPrint = tick()
+        end
+
+        -- 1. Stuck & Teleport Safety
         if dist > Config.TeleportDistance then
-            warn("[BotAction] Teleporting! Dist: " .. dist)
             myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 5)
+            wanderingTarget = nil
+            currentWaypoints = nil
             return
         end
-        
-        -- Stuck Detection
-        if (myRoot.Position - lastPosition).Magnitude < 0.2 then
+
+        if (myRoot.Position - lastPosition).Magnitude < 0.2 and dist > 5 then
             stuckTimer = stuckTimer + RunService.Heartbeat:Wait()
             if stuckTimer > Config.StuckThreshold then
-                warn("[BotAction] Stuck detected! Jumping.")
                 myHum.Jump = true
+                -- Side step
+                myRoot.CFrame = myRoot.CFrame * CFrame.new(2,0,0) 
                 stuckTimer = 0
             end
         else
@@ -925,73 +966,85 @@ local BotCore = (function()
         end
         lastPosition = myRoot.Position
 
-        -- 2. Follow Logic
+
+        -- 2. State Machine: CHASE vs IDLE (Wander)
         if dist > Config.MaxDistance then
-            -- Calculate goal: Behind player
-            local goalDetails = targetRoot.CFrame * CFrame.new(0, 0, 5) 
-            local goalPos = goalDetails.Position
+            -- >>> CHASE MODE <<<
+            wanderingTarget = nil -- Reset wander info
             
-            -- Pathfinding Logic
+            local goalPos = targetRoot.Position
+            
+            -- Pathfinding RECALC
             if tick() - lastPathTime > Config.PathUpdateInterval then
                 lastPathTime = tick()
-                
                 local path = PathfindingService:CreatePath({
-                    AgentRadius = 2,
-                    AgentHeight = 5,
-                    AgentCanJump = true,
-                    AgentJumpHeight = 10,
-                    WaypointSpacing = 8
+                    AgentRadius = 2, AgentHeight = 5, AgentCanJump = true, AgentJumpHeight = 12, WaypointSpacing = 6
                 })
+                pcall(function() path:ComputeAsync(myRoot.Position, goalPos) end)
                 
-                local success, errorMessage = pcall(function()
-                    path:ComputeAsync(myRoot.Position, goalPos)
-                end)
-                
-                if success and path.Status == Enum.PathStatus.Success then
+                if path.Status == Enum.PathStatus.Success then
                     currentWaypoints = path:GetWaypoints()
-                    currentWaypointIndex = 2 -- Skip current pos
+                    currentWaypointIndex = 2
                 else
-                    warn("[BotWarning] Path failed via PFService: " .. tostring(path.Status))
                     currentWaypoints = nil
-                    -- Fallback to direct move
-                    MoveTo(goalPos)
+                    MoveTo(goalPos) -- Direct fallback
                 end
             end
-            
-            -- Execute Path
+
+            -- Follow Path
             if currentWaypoints and currentWaypointIndex <= #currentWaypoints then
-                local waypoint = currentWaypoints[currentWaypointIndex]
+                local wp = currentWaypoints[currentWaypointIndex]
                 
-                -- Raycast for immediate obstacles
-                local isBlocked, hit = CheckObstacle(myRoot)
-                if isBlocked then
+                -- Steering / Obstacle Avoidance
+                local avoidance = GetObstacleAvoidanceVector(myRoot)
+                if avoidance == "JUMP" then
                     myHum.Jump = true
+                    myHum:MoveTo(wp.Position)
+                elseif avoidance then
+                    -- Blend path dir with avoidance dir
+                    local desiredDir = (wp.Position - myRoot.Position).Unit
+                    local finalDir = (desiredDir + avoidance).Unit
+                    myHum:MoveTo(myRoot.Position + finalDir * 5)
+                else
+                    if wp.Action == Enum.PathWaypointAction.Jump then myHum.Jump = true end
+                    myHum:MoveTo(wp.Position)
                 end
                 
-                if waypoint.Action == Enum.PathWaypointAction.Jump then
-                    myHum.Jump = true
-                end
-                
-                myHum:MoveTo(waypoint.Position)
-                
-                local distToWaypoint = (myRoot.Position - waypoint.Position).Magnitude
-                if distToWaypoint < 6 then
+                if (myRoot.Position - wp.Position).Magnitude < 5 then
                     currentWaypointIndex = currentWaypointIndex + 1
                 end
             else
                 MoveTo(goalPos)
             end
-            
-        elseif dist < Config.MinDistance then
-            myHum:MoveTo(myRoot.Position)
-        end
-    end
 
-    function BotCore:SetTarget(name)
-        warn("[BotDebug] SetTarget called with: " .. tostring(name))
-        currentTargetName = name
-        currentWaypoints = nil
-        currentWaypointIndex = 0
+        elseif dist < Config.MinDistance then
+            -- >>> IDLE / WANDER MODE (Human-Like) <<<
+            
+            -- If we shouldn't wander yet (waiting)
+            if tick() < wanderWaitTime then
+                myHum:MoveTo(myRoot.Position) -- Stand still (pause)
+                return
+            end
+
+            -- Generate new point if needed
+            if not wanderingTarget or (myRoot.Position - wanderingTarget).Magnitude < 4 then
+                wanderingTarget = GetRandomWanderPoint(targetRoot.Position)
+                wanderWaitTime = tick() + math.random(1, 3) -- Pause after reaching
+                
+                -- Random "Look Around" (rotate root)
+                if math.random() > 0.5 then
+                    myRoot.CFrame = CFrame.new(myRoot.Position, wanderingTarget)
+                end
+            end
+            
+            -- Simple move to wander point (no pathfinding needed for short dists usually, but could add if complex)
+            local avoidance = GetObstacleAvoidanceVector(myRoot)
+            if avoidance == "JUMP" then
+                 myHum.Jump = true
+            end
+            
+            myHum:MoveTo(wanderingTarget)
+        end
     end
 
     function BotCore:SetEnabled(state)
