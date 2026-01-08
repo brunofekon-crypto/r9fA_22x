@@ -860,10 +860,19 @@ local BotCore = (function()
     end
 
     local function UpdateBot()
-        if not isEnabled or not currentTargetName then return end
+        if not isEnabled then return end
+        if not currentTargetName then 
+            -- warn("No target name")
+            return 
+        end
         
         local targetPlr = Players:FindFirstChild(currentTargetName)
-        if not targetPlr or not targetPlr.Character then return end
+        if not targetPlr then 
+            warn("Target player not found: " .. tostring(currentTargetName))
+            return 
+        end
+        
+        if not targetPlr.Character then return end
         
         local myChar = LocalPlayer.Character
         if not myChar then return end
@@ -877,6 +886,7 @@ local BotCore = (function()
         
         -- 1. Teleport if too far
         if dist > Config.TeleportDistance then
+            warn("Teleporter Triggered! Dist: " .. dist)
             myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 5)
             return
         end
@@ -885,6 +895,7 @@ local BotCore = (function()
         if (myRoot.Position - lastPosition).Magnitude < 0.2 then
             stuckTimer = stuckTimer + RunService.Heartbeat:Wait()
             if stuckTimer > Config.StuckThreshold then
+                warn("Stuck detected! Jumping.")
                 myHum.Jump = true
                 stuckTimer = 0
             end
@@ -908,7 +919,7 @@ local BotCore = (function()
                     AgentHeight = 5,
                     AgentCanJump = true,
                     AgentJumpHeight = 10,
-                    WaypointSpacing = 8 -- Optimized spacing
+                    WaypointSpacing = 8
                 })
                 
                 local success, errorMessage = pcall(function()
@@ -919,6 +930,7 @@ local BotCore = (function()
                     currentWaypoints = path:GetWaypoints()
                     currentWaypointIndex = 2 -- Skip current pos
                 else
+                    warn("Path failed! Status: " .. tostring(path.Status))
                     currentWaypoints = nil
                     -- Fallback to direct move
                     MoveTo(goalPos)
@@ -941,18 +953,15 @@ local BotCore = (function()
                 
                 myHum:MoveTo(waypoint.Position)
                 
-                -- Check if reached waypoint
                 local distToWaypoint = (myRoot.Position - waypoint.Position).Magnitude
-                if distToWaypoint < 6 then -- Threshold to switch to next waypoint
+                if distToWaypoint < 6 then
                     currentWaypointIndex = currentWaypointIndex + 1
                 end
             else
-                -- Direct move fallback if no path or finished
-                 MoveTo(goalPos)
+                MoveTo(goalPos)
             end
             
         elseif dist < Config.MinDistance then
-            -- Stop moving if too close
             myHum:MoveTo(myRoot.Position)
         end
     end
