@@ -1184,13 +1184,20 @@ function VoidLib:CreateWindow()
                 local CC = Instance.new("UICorner"); CC.CornerRadius = UDim.new(1, 0); CC.Parent = circle
                 
                 local enabled = default
+                local ToggleObj = {
+                    Frame = TFrame,
+                    Set = function(val)
+                        enabled = val
+                        TweenService:Create(circle, TweenInfo.new(0.2), {Position = enabled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)}):Play()
+                        TweenService:Create(TBtn, TweenInfo.new(0.2), {BackgroundColor3 = enabled and Themes.Accent or Color3.fromRGB(60,60,65)}):Play()
+                        pcall(callback, enabled)
+                    end
+                }
+
                 TBtn.MouseButton1Click:Connect(function()
-                    enabled = not enabled
-                    TweenService:Create(circle, TweenInfo.new(0.2), {Position = enabled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)}):Play()
-                    TweenService:Create(TBtn, TweenInfo.new(0.2), {BackgroundColor3 = enabled and Themes.Accent or Color3.fromRGB(60,60,65)}):Play()
-                    pcall(callback, enabled)
+                    ToggleObj.Set(not enabled)
                 end)
-                return TFrame
+                return ToggleObj
             end
             
             function GroupObj:Slider(text, min, max, default, callback)
@@ -1738,7 +1745,7 @@ local Combat = Win:Tab("Combate")
 local AimbotGroup = Combat:Group("Aimbot Principal")
 local aimbotDependents = {} -- Store dependent frames
 
-AimbotGroup:Toggle("Ativar Aimbot", AimbotCore:IsEnabled(), function(v)
+local aimbotToggle = AimbotGroup:Toggle("Ativar Aimbot", AimbotCore:IsEnabled(), function(v)
     AimbotCore:SetEnabled(v)
     -- Toggle visibility of dependents
     if v then
@@ -1753,20 +1760,20 @@ AimbotGroup:Toggle("Ativar Aimbot", AimbotCore:IsEnabled(), function(v)
     end
 end)
 
-local tCheck = AimbotGroup:Toggle("Ignorar Aliados", getgenv().TeamCheck, function(v)
+local tCheckToggle = AimbotGroup:Toggle("Ignorar Aliados", getgenv().TeamCheck, function(v)
     getgenv().TeamCheck = v
 end)
-table.insert(aimbotDependents, tCheck)
+table.insert(aimbotDependents, tCheckToggle.Frame)
 
-local legitT = AimbotGroup:Toggle("Modo Legit", getgenv().LegitMode or false, function(v)
+local legitToggle = AimbotGroup:Toggle("Modo Legit", getgenv().LegitMode or false, function(v)
     getgenv().LegitMode = v
 end)
-table.insert(aimbotDependents, legitT)
+table.insert(aimbotDependents, legitToggle.Frame)
 
-local cursorT = AimbotGroup:Toggle("Cursor Aim", AimbotCore:IsCursorAim(), function(v)
+local cursorToggle = AimbotGroup:Toggle("Cursor Aim", AimbotCore:IsCursorAim(), function(v)
     AimbotCore:SetCursorAim(v)
 end)
-table.insert(aimbotDependents, cursorT)
+table.insert(aimbotDependents, cursorToggle.Frame)
 
 local function GetServerPlayers()
     local list = {}
@@ -1821,7 +1828,7 @@ for _, frame in pairs(aimbotDependents) do
 end
 
 local KillAuraGroup = Combat:Group("Kill Aura")
-KillAuraGroup:Toggle("Kill Player(s)", KillAuraCore:IsEnabled(), function(v)
+local killAuraToggle = KillAuraGroup:Toggle("Kill Player(s)", KillAuraCore:IsEnabled(), function(v)
     KillAuraCore:SetEnabled(v)
 end)
 
@@ -1871,7 +1878,7 @@ local Visual = Win:Tab("Visual")
 local ESPGroup = Visual:Group("ESP Jogadores")
 local espDependents = {} -- Store dependent frames for ESP
 
-ESPGroup:Toggle("Ativar ESP (Box)", ESPCore:IsEnabled(), function(v)
+local espToggle = ESPGroup:Toggle("Ativar ESP (Box)", ESPCore:IsEnabled(), function(v)
     ESPCore:SetEnabled(v)
     -- Toggle visibility of dependents
     if v then
@@ -1886,20 +1893,20 @@ ESPGroup:Toggle("Ativar ESP (Box)", ESPCore:IsEnabled(), function(v)
     end
 end)
 
-local nameT = ESPGroup:Toggle("Mostrar Nomes", getgenv().ESPNames, function(v)
+local nameToggle = ESPGroup:Toggle("Mostrar Nomes", getgenv().ESPNames, function(v)
     getgenv().ESPNames = v
 end)
-table.insert(espDependents, nameT)
+table.insert(espDependents, nameToggle.Frame)
 
-local healthT = ESPGroup:Toggle("Barra de Vida", getgenv().ESPHealth, function(v)
+local healthToggle = ESPGroup:Toggle("Barra de Vida", getgenv().ESPHealth, function(v)
     getgenv().ESPHealth = v
 end)
-table.insert(espDependents, healthT)
+table.insert(espDependents, healthToggle.Frame)
 
-local tracerT = ESPGroup:Toggle("Linhas (Tracers)", getgenv().ESPTracers, function(v)
+local tracerToggle = ESPGroup:Toggle("Linhas (Tracers)", getgenv().ESPTracers, function(v)
     getgenv().ESPTracers = v
 end)
-table.insert(espDependents, tracerT)
+table.insert(espDependents, tracerToggle.Frame)
 
 -- Initialize visibility based on default state
 local isESPEnabled = ESPCore:IsEnabled()
@@ -1908,7 +1915,7 @@ for _, frame in pairs(espDependents) do
 end
 
 local HeadGroup = Visual:Group("Cabeças (Headshot)")
-HeadGroup:Toggle("Expandir Cabeças", HeadESP:IsEnabled(), function(v)
+local headToggle = HeadGroup:Toggle("Expandir Cabeças", HeadESP:IsEnabled(), function(v)
     HeadESP:SetEnabled(v)
 end)
 HeadGroup:Slider("Tamanho", 1, 20, HeadESP:GetHeadSize(), function(v)
@@ -1918,7 +1925,7 @@ end)
 -- >>> TAB: LOCAL PLAYER
 local Local = Win:Tab("Local")
 local CharGroup = Local:Group("Personagem")
-CharGroup:Toggle("Respawn Onde Morreu", RespawnCore:IsEnabled(), function(v)
+local respawnToggle = CharGroup:Toggle("Respawn Onde Morreu", RespawnCore:IsEnabled(), function(v)
     RespawnCore:SetEnabled(v)
 end)
 
@@ -2087,18 +2094,24 @@ ManagerGroup:Button("Carregar Configurações", function()
     if isfile and isfile("DreeZy_Voidware.json") then
         local config = HttpService:JSONDecode(readfile("DreeZy_Voidware.json"))
         if config then
-            AimbotCore:SetEnabled(config.aimbot)
-            getgenv().TeamCheck = config.teamCheck
-            getgenv().LegitMode = config.legitMode or false
-            KillAuraCore:SetEnabled(config.killAura or false)
+            -- Update Controls (Visual + Logic)
+            aimbotToggle.Set(config.aimbot)
+            tCheckToggle.Set(config.teamCheck)
+            legitToggle.Set(config.legitMode or false)
+            killAuraToggle.Set(config.killAura or false)
+            
+            espToggle.Set(config.esp)
+            nameToggle.Set(config.espNames or false)
+            tracerToggle.Set(config.espTracers or false)
+            healthToggle.Set(config.espHealth or false)
+            
+            headToggle.Set(config.headEsp)
+            
+            respawnToggle.Set(config.respawn)
+            
             AimbotCore:SetFOV(config.fov)
-            ESPCore:SetEnabled(config.esp)
-            getgenv().ESPNames = config.espNames or false
-            getgenv().ESPTracers = config.espTracers or false
-            getgenv().ESPHealth = config.espHealth or false
-            HeadESP:SetEnabled(config.headEsp)
             HeadESP:SetHeadSize(config.headSize)
-            RespawnCore:SetEnabled(config.respawn)
+            
             if config.unlockKey then getgenv().UnlockMouseKey = Enum.KeyCode[config.unlockKey] end
             Notify("Configurações carregadas!")
         end
