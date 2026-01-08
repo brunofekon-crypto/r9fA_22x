@@ -1722,16 +1722,17 @@ function VoidLib:CreateWindow()
         end
     end)
 
-    return Window
+    return Window, ScreenGui
 end
 
 -- ==========================================
 -- UI SETUP & LOGIC WIRING
 -- ==========================================
-local Win = VoidLib:CreateWindow()
+local Win, SG = VoidLib:CreateWindow()
 
 -- >>> TAB: COMBATE
 local Combat = Win:Tab("Combate")
+
 
 local AimbotGroup = Combat:Group("Aimbot Principal")
 local aimbotDependents = {} -- Store dependent frames
@@ -1940,7 +1941,7 @@ AFKHud.Position = UDim2.new(0.5, -110, 0.05, 0) -- Top Center-ish
 AFKHud.BackgroundColor3 = Themes.Background
 AFKHud.BorderSizePixel = 0
 AFKHud.Visible = false
-AFKHud.Parent = ScreenGui
+AFKHud.Parent = SG
 AFKHud.Active = true
 AFKHud.Draggable = true 
 
