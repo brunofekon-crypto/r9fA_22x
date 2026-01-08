@@ -1935,33 +1935,86 @@ local AntiAFKGroup = Local:Group("Anti-AFK")
 -- Mini-HUD Creation
 local AFKHud = Instance.new("Frame")
 AFKHud.Name = "AFKHud"
-AFKHud.Size = UDim2.new(0, 200, 0, 50)
-AFKHud.Position = UDim2.new(0.5, -100, 0.1, 0) -- Top Center-ish
+AFKHud.Size = UDim2.new(0, 220, 0, 100)
+AFKHud.Position = UDim2.new(0.5, -110, 0.05, 0) -- Top Center-ish
 AFKHud.BackgroundColor3 = Themes.Background
 AFKHud.BorderSizePixel = 0
 AFKHud.Visible = false
 AFKHud.Parent = ScreenGui
 AFKHud.Active = true
-AFKHud.Draggable = true -- Allow user to move it
+AFKHud.Draggable = true 
 
 local AFKCorner = Instance.new("UICorner"); AFKCorner.CornerRadius = UDim.new(0, 8); AFKCorner.Parent = AFKHud
 local AFKStroke = Instance.new("UIStroke"); AFKStroke.Color = Themes.Accent; AFKStroke.Thickness = 1; AFKStroke.Parent = AFKHud
 
-local AFKLabel = Instance.new("TextLabel")
-AFKLabel.Text = "Anti AFK: Ativo"
-AFKLabel.Size = UDim2.new(1, 0, 1, 0)
-AFKLabel.BackgroundTransparency = 1
-AFKLabel.Font = Enum.Font.GothamBold
-AFKLabel.TextSize = 16
-AFKLabel.TextColor3 = Themes.Accent
-AFKLabel.Parent = AFKHud
+-- Title
+local TitleLab = Instance.new("TextLabel")
+TitleLab.Text = "Anti Afk"
+TitleLab.Size = UDim2.new(1, 0, 0, 30)
+TitleLab.Position = UDim2.new(0, 0, 0, 5)
+TitleLab.BackgroundTransparency = 1
+TitleLab.Font = Enum.Font.GothamBold
+TitleLab.TextSize = 18
+TitleLab.TextColor3 = Themes.Accent
+TitleLab.Parent = AFKHud
 
+-- Divider
+local Div = Instance.new("Frame")
+Div.Size = UDim2.new(1, -20, 0, 1)
+Div.Position = UDim2.new(0, 10, 0, 35)
+Div.BackgroundColor3 = Color3.fromRGB(50,50,55)
+Div.BorderSizePixel = 0
+Div.Parent = AFKHud
+
+-- Status
+local StatusLab = Instance.new("TextLabel")
+StatusLab.Text = "Status: Active"
+StatusLab.Size = UDim2.new(1, 0, 0, 25)
+StatusLab.Position = UDim2.new(0, 0, 0, 40)
+StatusLab.BackgroundTransparency = 1
+StatusLab.Font = Enum.Font.GothamBold
+StatusLab.TextSize = 16
+StatusLab.TextColor3 = Themes.Text
+StatusLab.Parent = AFKHud
+
+-- Time
+local TimeLab = Instance.new("TextLabel")
+TimeLab.Text = "Time: 00:00:00"
+TimeLab.Size = UDim2.new(1, 0, 0, 25)
+TimeLab.Position = UDim2.new(0, 0, 0, 65)
+TimeLab.BackgroundTransparency = 1
+TimeLab.Font = Enum.Font.Gotham
+TimeLab.TextSize = 16
+TimeLab.TextColor3 = Themes.Text
+TimeLab.Parent = AFKHud
+
+-- Logic
 local antiAfkEnabled = false
+local startTime = os.time() -- Track when script started (or when AFK enabled? User asked "since script executed")
+-- Actually user said "since when you executed the script". So startTime is static global.
+-- Let's define it global if not present, or just use this local one which is effectively global for this module scope.
+
 game:GetService("Players").LocalPlayer.Idled:Connect(function()
     if antiAfkEnabled then
         local vu = game:GetService("VirtualUser")
         vu:CaptureController()
         vu:ClickButton2(Vector2.new())
+    end
+end)
+
+local function UpdateTimer()
+    if not AFKHud.Visible then return end
+    local diff = os.time() - startTime
+    local h = math.floor(diff / 3600)
+    local m = math.floor((diff % 3600) / 60)
+    local s = diff % 60
+    TimeLab.Text = string.format("Time: %02d:%02d:%02d", h, m, s)
+end
+
+task.spawn(function()
+    while true do
+        UpdateTimer()
+        task.wait(1)
     end
 end)
 
