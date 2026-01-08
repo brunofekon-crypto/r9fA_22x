@@ -797,6 +797,19 @@ local ESPCore = (function()
     return ESPCore
 end)()
 
+-- [5] BOT CORE (AI)
+local BotCore = (function()
+    local success, result = pcall(function()
+        return loadstring(readfile("BotDreeZy.lua"))()
+    end)
+    if success and result then
+        return result
+    else
+        warn("Falha ao carregar BotDreeZy.lua: " .. tostring(result))
+        return {SetTarget = function() end, SetEnabled = function() end} -- Dummy fallback
+    end
+end)()
+
 -- ==========================================
 -- VOIDWARE UI LIBRARY
 -- ==========================================
@@ -982,10 +995,6 @@ function VoidLib:CreateWindow()
     TabContainer.ScrollBarThickness = 0
     TabContainer.Parent = Sidebar
     local TabList = Instance.new("UIListLayout"); TabList.Padding = UDim.new(0, 5); TabList.SortOrder = Enum.SortOrder.LayoutOrder; TabList.Parent = TabContainer
-    
-    TabList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        TabContainer.CanvasSize = UDim2.new(0, 0, 0, TabList.AbsoluteContentSize.Y + 10)
-    end)
 
     -- Profile Section
     local Profile = Instance.new("Frame")
@@ -2066,42 +2075,28 @@ end)
 local BotMe = Win:Tab("BotMe")
 local BotGroup = BotMe:Group("Gerenciamento de Bot")
 
--- Load Bot Logic
-local BotCore = nil
-if isfile and isfile("BotDreeZy.lua") then
-    local success, result = pcall(function() return loadstring(readfile("BotDreeZy.lua"))() end)
-    if success and result then
-        BotCore = result
-    else
-        warn("Failed to load BotDreeZy.lua: " .. tostring(result))
-    end
-end
-
-if not BotCore then
-    -- Fallback empty if load failed
-    BotGroup:Paragraph("Erro", "BotDreeZy.lua não encontrado ou erro ao carregar.")
-    BotCore = {SetEnabled = function() end, SetTarget = function() end}
-end
-
 local function GetPlayersList()
     local list = {}
-    for _, p in pairs(game:GetService("Players"):GetPlayers()) do
-        if p ~= game:GetService("Players").LocalPlayer then
-            table.insert(list, p.Name)
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= player then
+            table.insert(list, v.Name)
         end
     end
     return list
 end
 
-local BotTargetDrop = BotGroup:Dropdown("Target Player", GetPlayersList(), "Select Player", function(val)
-    BotCore:SetTarget(val)
+local botTargetDropdown = BotGroup:Dropdown("Alvo (Target)", {"Nenhum"}, function(v)
+    BotCore:SetTarget(v)
 end)
 
--- Auto Refresh Dropdown
-game:GetService("Players").PlayerAdded:Connect(function() BotTargetDrop:Refresh(GetPlayersList()) end)
-game:GetService("Players").PlayerRemoving:Connect(function() BotTargetDrop:Refresh(GetPlayersList()) end)
+-- Auto-update Dropdown
+task.spawn(function()
+    while task.wait(5) do
+        botTargetDropdown:Refresh(GetPlayersList())
+    end
+end)
 
-BotGroup:Toggle("Ativar Bot Mode", false, function(v)
+BotGroup:Toggle("Ativar Bot (IA)", false, function(v)
     BotCore:SetEnabled(v)
 end)
 
