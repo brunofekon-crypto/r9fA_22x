@@ -1457,7 +1457,7 @@ function VoidLib:CreateWindow()
                 -- Dropdown for selection
                 local selectedPlayer = "Selecionar..."
                 local DropBtn = Instance.new("TextButton")
-                DropBtn.Size = UDim2.new(0.7, 0, 0, 20)
+                DropBtn.Size = UDim2.new(0.65, 0, 0, 25)
                 DropBtn.Position = UDim2.new(0, 10, 0, 25)
                 DropBtn.BackgroundColor3 = Color3.fromRGB(45,45,50)
                 DropBtn.Text = "   " .. selectedPlayer
@@ -1467,42 +1467,84 @@ function VoidLib:CreateWindow()
                 DropBtn.TextXAlignment = Enum.TextXAlignment.Left
                 DropBtn.Parent = IFrame
                 local DC = Instance.new("UICorner"); DC.CornerRadius = UDim.new(0, 4); DC.Parent = DropBtn
+                
+                local DropArrow = Instance.new("TextLabel")
+                DropArrow.Text = "v"
+                DropArrow.Size = UDim2.new(0, 20, 1, 0)
+                DropArrow.Position = UDim2.new(1, -20, 0, 0)
+                DropArrow.BackgroundTransparency = 1
+                DropArrow.TextColor3 = Themes.TextDim
+                DropArrow.Font = Enum.Font.GothamBold
+                DropArrow.Parent = DropBtn
 
                 -- Add Button
                 local AddBtn = Instance.new("TextButton")
-                AddBtn.Size = UDim2.new(0.2, 0, 0, 20)
-                AddBtn.Position = UDim2.new(0.75, 0, 0, 25)
+                AddBtn.Size = UDim2.new(0.25, 0, 0, 25)
+                AddBtn.Position = UDim2.new(0, 0, 0, 25)
+                AddBtn.AnchorPoint = Vector2.new(0,0)
+                -- Position logic: 10px (left) + 0.65 width + 10px spacing?
+                -- Using anchor point relative to frame right might be easier but let's stick to UDim2 math
+                AddBtn.Position = UDim2.new(0.7, 5, 0, 25)
                 AddBtn.BackgroundColor3 = Themes.Accent
-                AddBtn.Text = "+"
+                AddBtn.Text = "Add +"
                 AddBtn.Font = Enum.Font.GothamBold
-                AddBtn.TextSize = 14
+                AddBtn.TextSize = 12
                 AddBtn.TextColor3 = Themes.Text
                 AddBtn.Parent = IFrame
                 local AC = Instance.new("UICorner"); AC.CornerRadius = UDim.new(0, 4); AC.Parent = AddBtn
 
-                -- Dropdown List (Hidden)
-                local DList = Instance.new("ScrollingFrame")
-                DList.Size = UDim2.new(0.7, 0, 0, 100)
-                DList.Position = UDim2.new(0, 10, 0, 48)
-                DList.BackgroundColor3 = Color3.fromRGB(40,40,45)
-                DList.Visible = false
-                DList.ZIndex = 10
-                DList.BorderSizePixel = 0
-                DList.Parent = IFrame
-                local DLC = Instance.new("UICorner"); DLC.CornerRadius = UDim.new(0, 4); DLC.Parent = DList
-                local DLL = Instance.new("UIListLayout"); DLL.Parent = DList; DLL.SortOrder = Enum.SortOrder.LayoutOrder
-
-                -- Added Items List
+                -- Added Items List Container
                 local AddedList = Instance.new("ScrollingFrame")
-                AddedList.Size = UDim2.new(1, -20, 1, -55)
-                AddedList.Position = UDim2.new(0, 10, 0, 50)
+                AddedList.Size = UDim2.new(1, -20, 0, 0) -- Height dynamic
+                AddedList.Position = UDim2.new(0, 10, 0, 60)
                 AddedList.BackgroundTransparency = 1
                 AddedList.BorderSizePixel = 0
                 AddedList.ScrollBarThickness = 2
                 AddedList.Parent = IFrame
-                local ALL = Instance.new("UIListLayout"); ALL.Padding = UDim.new(0, 2); ALL.Parent = AddedList; ALL.SortOrder = Enum.SortOrder.LayoutOrder
+                local ALL = Instance.new("UIListLayout"); ALL.Padding = UDim.new(0, 5); ALL.Parent = AddedList; ALL.SortOrder = Enum.SortOrder.LayoutOrder
+
+                -- Dropdown List (Options)
+                local DList = Instance.new("ScrollingFrame")
+                DList.Size = UDim2.new(0.65, 0, 0, 120)
+                DList.Position = UDim2.new(0, 10, 0, 55)
+                DList.BackgroundColor3 = Color3.fromRGB(40,40,45)
+                DList.Visible = false
+                DList.ZIndex = 20
+                DList.BorderSizePixel = 0
+                DList.Parent = IFrame
+                local DLC = Instance.new("UICorner"); DLC.CornerRadius = UDim.new(0, 4); DLC.Parent = DList
+                local DLL = Instance.new("UIListLayout"); DLL.Parent = DList; DLL.SortOrder = Enum.SortOrder.LayoutOrder; DLL.Padding = UDim.new(0, 2)
+                local DP = Instance.new("UIPadding"); DP.PaddingLeft = UDim.new(0, 5); DP.PaddingTop = UDim.new(0, 5); DP.Parent = DList
 
                 local addedItems = {}
+                local isDropdownOpen = false
+                
+                local function UpdateSize()
+                    local listHeight = ALL.AbsoluteContentSize.Y
+                    AddedList.Size = UDim2.new(1, -20, 0, listHeight)
+                    AddedList.CanvasSize = UDim2.new(0, 0, 0, listHeight)
+                    
+                    local baseHeight = 60 + listHeight + 10 -- Header + Controls + List + Padding
+                    
+                    if isDropdownOpen then
+                        -- Expand to show dropdown (120px) if it's taller than the current space
+                        -- Dropdown is at Y=55. 
+                        local totalWithDropdown = 55 + 120 + 10
+                        if totalWithDropdown > baseHeight then
+                            baseHeight = totalWithDropdown
+                        end
+                    end
+                    
+                    TweenService:Create(IFrame, TweenInfo.new(0.3), {Size = UDim2.new(1, 0, 0, baseHeight)}):Play()
+                    
+                     -- Trigger resize of parent container
+                     task.delay(0.31, function() 
+                        -- This forces the parent UIListLayout to see the new size
+                        if IFrame.Parent and IFrame.Parent:IsA("UIListLayout") then
+                            IFrame.Parent:ApplyLayout()
+                        end
+                    end)
+                end
 
                 local function RefreshAddedList()
                     -- clear
@@ -1510,12 +1552,13 @@ function VoidLib:CreateWindow()
                     
                     for i, item in pairs(addedItems) do
                         local ItemFrame = Instance.new("Frame")
-                        ItemFrame.Size = UDim2.new(1, 0, 0, 20)
-                        ItemFrame.BackgroundTransparency = 1
+                        ItemFrame.Size = UDim2.new(1, 0, 0, 24)
+                        ItemFrame.BackgroundColor3 = Color3.fromRGB(35,35,40)
                         ItemFrame.Parent = AddedList
+                        local IC = Instance.new("UICorner"); IC.CornerRadius = UDim.new(0, 4); IC.Parent = ItemFrame
                         
                         local ItemLab = Instance.new("TextLabel")
-                        ItemLab.Text = "- " .. item
+                        ItemLab.Text = "  " .. item
                         ItemLab.Size = UDim2.new(0.8, 0, 1, 0)
                         ItemLab.BackgroundTransparency = 1
                         ItemLab.TextColor3 = Themes.TextDim
@@ -1525,12 +1568,13 @@ function VoidLib:CreateWindow()
                         ItemLab.Parent = ItemFrame
                         
                         local DelBtn = Instance.new("TextButton")
-                        DelBtn.Text = "X"
-                        DelBtn.Size = UDim2.new(0, 20, 0, 20)
-                        DelBtn.Position = UDim2.new(1, -20, 0, 0)
+                        DelBtn.Text = "x"
+                        DelBtn.Size = UDim2.new(0, 24, 0, 24)
+                        DelBtn.Position = UDim2.new(1, -24, 0, 0)
                         DelBtn.BackgroundTransparency = 1
-                        DelBtn.TextColor3 = Color3.fromRGB(200, 50, 50)
+                        DelBtn.TextColor3 = Color3.fromRGB(200, 80, 80)
                         DelBtn.Font = Enum.Font.GothamBold
+                        DelBtn.TextSize = 14
                         DelBtn.Parent = ItemFrame
                         
                         DelBtn.MouseButton1Click:Connect(function()
@@ -1539,29 +1583,23 @@ function VoidLib:CreateWindow()
                             RefreshAddedList()
                         end)
                     end
-                    
-                    local contentSize = ALL.AbsoluteContentSize.Y
-                    IFrame.Size = UDim2.new(1, 0, 0, math.max(80, 50 + contentSize + 10))
-                    AddedList.CanvasSize = UDim2.new(0,0,0, contentSize)
-                     -- Trigger resize of container if needed
-                     task.delay(0.1, function() 
-                        if Container then 
-                           -- Parent layout update
-                        end
-                    end)
+                    UpdateSize()
                 end
 
                 DropBtn.MouseButton1Click:Connect(function()
-                    DList.Visible = not DList.Visible
-                    if DList.Visible then
-                        -- Refresh Options
+                    isDropdownOpen = not isDropdownOpen
+                    
+                    if isDropdownOpen then
+                        DList.Visible = true
+                        DropArrow.Rotation = 180
+                         -- Refresh Options
                          for _, c in pairs(DList:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
                          local opts = getOptionsFunc()
                          for _, opt in pairs(opts) do
                              if opt ~= "Todos" and opt ~= "Amigos" and opt ~= "Nada" then -- only players
                                  local B = Instance.new("TextButton")
-                                 B.Size = UDim2.new(1,0,0,20)
-                                 B.Text = "  " .. opt
+                                 B.Size = UDim2.new(1, -10, 0, 20)
+                                 B.Text = opt
                                  B.BackgroundTransparency = 1
                                  B.TextColor3 = Themes.TextDim
                                  B.Font = Enum.Font.Gotham
@@ -1571,12 +1609,19 @@ function VoidLib:CreateWindow()
                                  B.MouseButton1Click:Connect(function()
                                     selectedPlayer = opt
                                     DropBtn.Text = "   " .. selectedPlayer
+                                    isDropdownOpen = false
                                     DList.Visible = false
+                                    DropArrow.Rotation = 0
+                                    UpdateSize()
                                  end)
                              end
                          end
-                         DList.CanvasSize = UDim2.new(0,0,0, DLL.AbsoluteContentSize.Y)
+                         DList.CanvasSize = UDim2.new(0,0,0, DLL.AbsoluteContentSize.Y + 10)
+                    else
+                        DList.Visible = false
+                        DropArrow.Rotation = 0
                     end
+                    UpdateSize()
                 end)
 
                 AddBtn.MouseButton1Click:Connect(function()
