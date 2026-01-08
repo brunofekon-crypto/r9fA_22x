@@ -1063,7 +1063,7 @@ local BotCore = (function()
         end
     end
 
-    end
+
 
     function BotCore:SetDistances(min, max)
         Config.MinDistance = min
