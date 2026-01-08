@@ -404,6 +404,7 @@ local KillAuraCore = (function()
     local player = Players.LocalPlayer
     local isEnabled = false
     local targetMode = "Todos" -- "Todos", "Amigos", "PlayerName"
+    local teamTargetMode = "Nada" -- "Nada" or TeamName
 
     local function isSameTeam(targetPlayer)
         -- TeamCheck only applies to "Todos" mode usually, or if explicitly requested.
@@ -414,6 +415,13 @@ local KillAuraCore = (function()
         if not getgenv().TeamCheck then return false end
         if player.Team and targetPlayer.Team then return player.Team == targetPlayer.Team end
         if player.TeamColor and targetPlayer.TeamColor then return player.TeamColor == targetPlayer.TeamColor end
+        return false
+    end
+
+    local function isTeamMatch(targetPlayer)
+        if teamTargetMode == "Nada" then return true end
+        if targetPlayer.Team and targetPlayer.Team.Name == teamTargetMode then return true end
+        -- Fallback for TeamColor if needed, but usually Team Name is enough
         return false
     end
 
@@ -429,11 +437,11 @@ local KillAuraCore = (function()
                 
                 -- FILTERING LOGIC
                 if targetMode == "Todos" then
-                    if not isSameTeam(targetPlayer) then shouldCheck = true end
+                    if not isSameTeam(targetPlayer) and isTeamMatch(targetPlayer) then shouldCheck = true end
                 elseif targetMode == "Amigos" then
-                    if player:IsFriendsWith(targetPlayer.UserId) then shouldCheck = true end
+                    if player:IsFriendsWith(targetPlayer.UserId) and isTeamMatch(targetPlayer) then shouldCheck = true end
                 else
-                    -- Specific Player
+                    -- Specific Player (PRIORITY: IGNORE TEAM FILTER)
                     if targetPlayer.Name == targetMode or targetPlayer.DisplayName == targetMode then
                         shouldCheck = true 
                     end
@@ -495,6 +503,10 @@ local KillAuraCore = (function()
     function KillAura:SetTargetMode(mode)
         targetMode = mode or "Todos"
         currentTarget = nil -- Reset target logic to force rescanning
+    end
+    function KillAura:SetTeamTarget(teamName)
+        teamTargetMode = teamName or "Nada"
+        currentTarget = nil
     end
     function KillAura:IsEnabled() return isEnabled end
     if getgenv then isEnabled = getgenv().KillAuraEnabled or false else isEnabled = false end
@@ -1542,6 +1554,21 @@ task.spawn(function()
 end)
 game:GetService("Players").PlayerAdded:Connect(function() TargetDrop:Refresh(GetPlayersList()) end)
 game:GetService("Players").PlayerRemoving:Connect(function() TargetDrop:Refresh(GetPlayersList()) end)
+
+local function GetTeamsList()
+    local list = {"Nada"}
+    for _, t in pairs(game:GetService("Teams"):GetTeams()) do
+        table.insert(list, t.Name)
+    end
+    return list
+end
+
+local TeamDrop = KillAuraGroup:Dropdown("Time Kill", GetTeamsList(), "Nada", function(val)
+    KillAuraCore:SetTeamTarget(val)
+end)
+
+game:GetService("Teams").ChildAdded:Connect(function() TeamDrop:Refresh(GetTeamsList()) end)
+game:GetService("Teams").ChildRemoved:Connect(function() TeamDrop:Refresh(GetTeamsList()) end)
 
 -- >>> TAB: VISUAL
 local Visual = Win:Tab("Visual")
