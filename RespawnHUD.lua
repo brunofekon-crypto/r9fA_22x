@@ -489,14 +489,24 @@ local KillAuraCore = (function()
         end
 
         -- Teleport execution
+        -- Teleport execution
         if currentTarget and currentTarget.Character and currentTarget.Character:FindFirstChild("HumanoidRootPart") then
-             if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
                 local targetRoot = currentTarget.Character.HumanoidRootPart
-                -- Teleport 4 studs behind the target
-                -- CFrame.new(0, 0, 4) puts us 4 studs backwards relative to target's facing direction
                 local newCFrame = targetRoot.CFrame * CFrame.new(0, 0, 4)
                 player.Character.HumanoidRootPart.CFrame = newCFrame
-             end
+            end
+        end
+    end)
+
+    -- Noclip Logic
+    RunService.Stepped:Connect(function()
+        if isEnabled and player.Character then
+            for _, part in pairs(player.Character:GetChildren()) do
+                if part:IsA("BasePart") and part.CanCollide then
+                    part.CanCollide = false
+                end
+            end
         end
     end)
 
