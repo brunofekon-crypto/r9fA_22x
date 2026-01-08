@@ -227,21 +227,33 @@ local AimbotCore = (function()
     local function isTargetInFOV(targetPart)
         local viewportPoint, onScreen = camera:WorldToViewportPoint(targetPart.Position)
         if not onScreen then return false end
-        local viewportSize = camera.ViewportSize
-        local screenCenter = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+        
+        local centerPos
+        if getgenv().CursorAim then
+             centerPos = UserInputService:GetMouseLocation()
+        else
+             local viewportSize = camera.ViewportSize
+             centerPos = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+        end
+
         local targetPos = Vector2.new(viewportPoint.X, viewportPoint.Y)
-        local distance = (targetPos - screenCenter).Magnitude
+        local distance = (targetPos - centerPos).Magnitude
         local fov = getgenv().AimbotFOV or 100
         return distance <= fov
     end
 
     local function updateFOVCircle()
         if not fovCircle or not isDrawingApiAvailable then return end
-        local viewportSize = camera.ViewportSize
         local fov = getgenv().AimbotFOV or 100
         fovCircle.Visible = isEnabled
-        fovCircle.Position = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
         fovCircle.Radius = fov
+        
+        if getgenv().CursorAim then
+             fovCircle.Position = UserInputService:GetMouseLocation()
+        else
+             local viewportSize = camera.ViewportSize
+             fovCircle.Position = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+        end
     end
 
     local function findNearestTarget()
@@ -1492,6 +1504,11 @@ local isAimbotEnabled = AimbotCore:IsEnabled()
 for _, frame in pairs(aimbotDependents) do
     frame.Visible = isAimbotEnabled
 end
+
+local CursorAimGroup = Combat:Group("Cursor Aim")
+CursorAimGroup:Toggle("Ativar Cursor Aim", getgenv().CursorAim, function(v)
+    getgenv().CursorAim = v
+end)
 
 local KillAuraGroup = Combat:Group("Kill Aura")
 KillAuraGroup:Toggle("Kill Player(s)", KillAuraCore:IsEnabled(), function(v)
