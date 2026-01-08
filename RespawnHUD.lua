@@ -945,8 +945,24 @@ local BotCore = (function()
             lastDebugPrint = tick()
         end
 
+        -- 0. Seat Handling (Prevent Glitches)
+        if myHum.Sit then
+            -- If we need to move or are too far, force stand up
+            if dist > Config.MaxDistance or dist > Config.TeleportDistance then
+                warn("[BotAction] Sitting detected. Standing up...")
+                myHum.Sit = false
+                myHum.Jump = true
+                return -- Wait for physics to process stand up
+            end
+        end
+
         -- 1. Stuck & Teleport Safety
         if dist > Config.TeleportDistance then
+            -- Double check we aren't attached to something (like a seat glitch)
+            if myRoot:FindFirstChild("SeatWeld") then
+                myRoot.SeatWeld:Destroy()
+            end
+            
             myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 5)
             wanderingTarget = nil
             currentWaypoints = nil
