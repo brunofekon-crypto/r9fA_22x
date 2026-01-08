@@ -2062,20 +2062,43 @@ end)
 local BotMe = Win:Tab("BotMe")
 local BotGroup = BotMe:Group("Gerenciamento de Bot")
 
-local botListItems = {} -- Placeholder for list items
-local function GetBotList()
-    return botListItems
+-- Load Bot Logic
+local BotCore = nil
+if isfile and isfile("BotDreeZy.lua") then
+    local success, result = pcall(function() return loadstring(readfile("BotDreeZy.lua"))() end)
+    if success and result then
+        BotCore = result
+    else
+        warn("Failed to load BotDreeZy.lua: " .. tostring(result))
+    end
 end
 
-local botList = BotGroup:InteractiveList("Lista", GetBotList, function(name)
-    table.insert(botListItems, name)
-end, function(name)
-    for i, v in ipairs(botListItems) do
-        if v == name then
-            table.remove(botListItems, i)
-            break
+if not BotCore then
+    -- Fallback empty if load failed
+    BotGroup:Paragraph("Erro", "BotDreeZy.lua não encontrado ou erro ao carregar.")
+    BotCore = {SetEnabled = function() end, SetTarget = function() end}
+end
+
+local function GetPlayersList()
+    local list = {}
+    for _, p in pairs(game:GetService("Players"):GetPlayers()) do
+        if p ~= game:GetService("Players").LocalPlayer then
+            table.insert(list, p.Name)
         end
     end
+    return list
+end
+
+local BotTargetDrop = BotGroup:Dropdown("Target Player", GetPlayersList(), "Select Player", function(val)
+    BotCore:SetTarget(val)
+end)
+
+-- Auto Refresh Dropdown
+game:GetService("Players").PlayerAdded:Connect(function() BotTargetDrop:Refresh(GetPlayersList()) end)
+game:GetService("Players").PlayerRemoving:Connect(function() BotTargetDrop:Refresh(GetPlayersList()) end)
+
+BotGroup:Toggle("Ativar Bot Mode", false, function(v)
+    BotCore:SetEnabled(v)
 end)
 
 -- >>> TAB: CONFIGURAÇÕES
