@@ -206,6 +206,8 @@ local AimbotCore = (function()
         end
     end)
 
+    local ignoredPlayers = {} -- List of ignored player names
+
     local function isTargetVisible(targetPart, character)
         local cameraPos = camera.CFrame.Position
         local _, onscreen = camera:WorldToViewportPoint(targetPart.Position)
@@ -262,6 +264,8 @@ local AimbotCore = (function()
                 pcall(function()
                     local shouldTarget = true
                     if isSameTeam(targetPlayer) then shouldTarget = false end
+                    if ignoredPlayers[targetPlayer.Name] then shouldTarget = false end
+
                     if shouldTarget and targetPlayer.Character and targetPlayer.Character:FindFirstChild("Head") and targetPlayer.Character:FindFirstChild("Humanoid") then
                         if not isTargetInFOV(targetPlayer.Character.Head) then return end
                         local distance = (mouse.Hit.Position - targetPlayer.Character.PrimaryPart.Position).magnitude
@@ -292,6 +296,8 @@ local AimbotCore = (function()
         getgenv().AimbotFOV = math.clamp(fov, 20, 500)
         updateFOVCircle()
     end
+    function AimbotCore:IgnorePlayer(name) ignoredPlayers[name] = true end
+    function AimbotCore:UnignorePlayer(name) ignoredPlayers[name] = nil end
     function AimbotCore:GetFOV() return getgenv().AimbotFOV or 100 end
     function AimbotCore:IsEnabled() return isEnabled end
 
@@ -1431,6 +1437,159 @@ function VoidLib:CreateWindow()
                 return DropdownObj
             end
 
+            function GroupObj:InteractiveList(text, getOptionsFunc, onAdd, onRemove)
+                local IFrame = CreateElementFrame()
+                IFrame.Size = UDim2.new(1, 0, 0, 80) -- Initial size
+                IFrame.ClipsDescendants = true
+                IFrame.ZIndex = 4
+
+                local ILab = Instance.new("TextLabel")
+                ILab.Text = text
+                ILab.Size = UDim2.new(1, -10, 0, 20)
+                ILab.Position = UDim2.new(0, 10, 0, 5)
+                ILab.BackgroundTransparency = 1
+                ILab.Font = Enum.Font.GothamMedium
+                ILab.TextColor3 = Themes.Text
+                ILab.TextSize = 13
+                ILab.TextXAlignment = Enum.TextXAlignment.Left
+                ILab.Parent = IFrame
+
+                -- Dropdown for selection
+                local selectedPlayer = "Selecionar..."
+                local DropBtn = Instance.new("TextButton")
+                DropBtn.Size = UDim2.new(0.7, 0, 0, 20)
+                DropBtn.Position = UDim2.new(0, 10, 0, 25)
+                DropBtn.BackgroundColor3 = Color3.fromRGB(45,45,50)
+                DropBtn.Text = "   " .. selectedPlayer
+                DropBtn.Font = Enum.Font.Gotham
+                DropBtn.TextSize = 12
+                DropBtn.TextColor3 = Themes.TextDim
+                DropBtn.TextXAlignment = Enum.TextXAlignment.Left
+                DropBtn.Parent = IFrame
+                local DC = Instance.new("UICorner"); DC.CornerRadius = UDim.new(0, 4); DC.Parent = DropBtn
+
+                -- Add Button
+                local AddBtn = Instance.new("TextButton")
+                AddBtn.Size = UDim2.new(0.2, 0, 0, 20)
+                AddBtn.Position = UDim2.new(0.75, 0, 0, 25)
+                AddBtn.BackgroundColor3 = Themes.Accent
+                AddBtn.Text = "+"
+                AddBtn.Font = Enum.Font.GothamBold
+                AddBtn.TextSize = 14
+                AddBtn.TextColor3 = Themes.Text
+                AddBtn.Parent = IFrame
+                local AC = Instance.new("UICorner"); AC.CornerRadius = UDim.new(0, 4); AC.Parent = AddBtn
+
+                -- Dropdown List (Hidden)
+                local DList = Instance.new("ScrollingFrame")
+                DList.Size = UDim2.new(0.7, 0, 0, 100)
+                DList.Position = UDim2.new(0, 10, 0, 48)
+                DList.BackgroundColor3 = Color3.fromRGB(40,40,45)
+                DList.Visible = false
+                DList.ZIndex = 10
+                DList.BorderSizePixel = 0
+                DList.Parent = IFrame
+                local DLC = Instance.new("UICorner"); DLC.CornerRadius = UDim.new(0, 4); DLC.Parent = DList
+                local DLL = Instance.new("UIListLayout"); DLL.Parent = DList; DLL.SortOrder = Enum.SortOrder.LayoutOrder
+
+                -- Added Items List
+                local AddedList = Instance.new("ScrollingFrame")
+                AddedList.Size = UDim2.new(1, -20, 1, -55)
+                AddedList.Position = UDim2.new(0, 10, 0, 50)
+                AddedList.BackgroundTransparency = 1
+                AddedList.BorderSizePixel = 0
+                AddedList.ScrollBarThickness = 2
+                AddedList.Parent = IFrame
+                local ALL = Instance.new("UIListLayout"); ALL.Padding = UDim.new(0, 2); ALL.Parent = AddedList; ALL.SortOrder = Enum.SortOrder.LayoutOrder
+
+                local addedItems = {}
+
+                local function RefreshAddedList()
+                    -- clear
+                    for _, c in pairs(AddedList:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
+                    
+                    for i, item in pairs(addedItems) do
+                        local ItemFrame = Instance.new("Frame")
+                        ItemFrame.Size = UDim2.new(1, 0, 0, 20)
+                        ItemFrame.BackgroundTransparency = 1
+                        ItemFrame.Parent = AddedList
+                        
+                        local ItemLab = Instance.new("TextLabel")
+                        ItemLab.Text = "- " .. item
+                        ItemLab.Size = UDim2.new(0.8, 0, 1, 0)
+                        ItemLab.BackgroundTransparency = 1
+                        ItemLab.TextColor3 = Themes.TextDim
+                        ItemLab.Font = Enum.Font.Gotham
+                        ItemLab.TextSize = 12
+                        ItemLab.TextXAlignment = Enum.TextXAlignment.Left
+                        ItemLab.Parent = ItemFrame
+                        
+                        local DelBtn = Instance.new("TextButton")
+                        DelBtn.Text = "X"
+                        DelBtn.Size = UDim2.new(0, 20, 0, 20)
+                        DelBtn.Position = UDim2.new(1, -20, 0, 0)
+                        DelBtn.BackgroundTransparency = 1
+                        DelBtn.TextColor3 = Color3.fromRGB(200, 50, 50)
+                        DelBtn.Font = Enum.Font.GothamBold
+                        DelBtn.Parent = ItemFrame
+                        
+                        DelBtn.MouseButton1Click:Connect(function()
+                            table.remove(addedItems, table.find(addedItems, item))
+                            pcall(onRemove, item)
+                            RefreshAddedList()
+                        end)
+                    end
+                    
+                    local contentSize = ALL.AbsoluteContentSize.Y
+                    IFrame.Size = UDim2.new(1, 0, 0, math.max(80, 50 + contentSize + 10))
+                    AddedList.CanvasSize = UDim2.new(0,0,0, contentSize)
+                     -- Trigger resize of container if needed
+                     task.delay(0.1, function() 
+                        if Container then 
+                           -- Parent layout update
+                        end
+                    end)
+                end
+
+                DropBtn.MouseButton1Click:Connect(function()
+                    DList.Visible = not DList.Visible
+                    if DList.Visible then
+                        -- Refresh Options
+                         for _, c in pairs(DList:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+                         local opts = getOptionsFunc()
+                         for _, opt in pairs(opts) do
+                             if opt ~= "Todos" and opt ~= "Amigos" and opt ~= "Nada" then -- only players
+                                 local B = Instance.new("TextButton")
+                                 B.Size = UDim2.new(1,0,0,20)
+                                 B.Text = "  " .. opt
+                                 B.BackgroundTransparency = 1
+                                 B.TextColor3 = Themes.TextDim
+                                 B.Font = Enum.Font.Gotham
+                                 B.TextSize = 12
+                                 B.TextXAlignment = Enum.TextXAlignment.Left
+                                 B.Parent = DList
+                                 B.MouseButton1Click:Connect(function()
+                                    selectedPlayer = opt
+                                    DropBtn.Text = "   " .. selectedPlayer
+                                    DList.Visible = false
+                                 end)
+                             end
+                         end
+                         DList.CanvasSize = UDim2.new(0,0,0, DLL.AbsoluteContentSize.Y)
+                    end
+                end)
+
+                AddBtn.MouseButton1Click:Connect(function()
+                    if selectedPlayer ~= "Selecionar..." and not table.find(addedItems, selectedPlayer) then
+                        table.insert(addedItems, selectedPlayer)
+                        pcall(onAdd, selectedPlayer)
+                        RefreshAddedList()
+                    end
+                end)
+                
+                return IFrame
+            end
+
             return GroupObj
         end
 
@@ -1522,6 +1681,13 @@ local cursorT = AimbotGroup:Toggle("Cursor Aim", AimbotCore:IsCursorAim(), funct
     AimbotCore:SetCursorAim(v)
 end)
 table.insert(aimbotDependents, cursorT)
+
+local ignoreList = AimbotGroup:InteractiveList("Ignorar Players", GetPlayersList, function(name)
+    AimbotCore:IgnorePlayer(name)
+end, function(name)
+    AimbotCore:UnignorePlayer(name)
+end)
+table.insert(aimbotDependents, ignoreList)
 
 local fovS = AimbotGroup:Slider("Campo de Visão (FOV)", 20, 500, AimbotCore:GetFOV(), function(v)
     AimbotCore:SetFOV(v)
