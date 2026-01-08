@@ -1930,6 +1930,32 @@ UtilityGroup:Button("Resetar Cursor (Emergência)", function()
     MouseUnlocker:SetUnlocked(false)
 end)
 
+local AntiAFKGroup = Local:Group("Anti-AFK")
+
+-- Mini-HUD Creation
+local AFKHud = Instance.new("Frame")
+AFKHud.Name = "AFKHud"
+AFKHud.Size = UDim2.new(0, 200, 0, 50)
+AFKHud.Position = UDim2.new(0.5, -100, 0.1, 0) -- Top Center-ish
+AFKHud.BackgroundColor3 = Themes.Background
+AFKHud.BorderSizePixel = 0
+AFKHud.Visible = false
+AFKHud.Parent = ScreenGui
+AFKHud.Active = true
+AFKHud.Draggable = true -- Allow user to move it
+
+local AFKCorner = Instance.new("UICorner"); AFKCorner.CornerRadius = UDim.new(0, 8); AFKCorner.Parent = AFKHud
+local AFKStroke = Instance.new("UIStroke"); AFKStroke.Color = Themes.Accent; AFKStroke.Thickness = 1; AFKStroke.Parent = AFKHud
+
+local AFKLabel = Instance.new("TextLabel")
+AFKLabel.Text = "Anti AFK: Ativo"
+AFKLabel.Size = UDim2.new(1, 0, 1, 0)
+AFKLabel.BackgroundTransparency = 1
+AFKLabel.Font = Enum.Font.GothamBold
+AFKLabel.TextSize = 16
+AFKLabel.TextColor3 = Themes.Accent
+AFKLabel.Parent = AFKHud
+
 local antiAfkEnabled = false
 game:GetService("Players").LocalPlayer.Idled:Connect(function()
     if antiAfkEnabled then
@@ -1939,8 +1965,9 @@ game:GetService("Players").LocalPlayer.Idled:Connect(function()
     end
 end)
 
-UtilityGroup:Toggle("Anti AFK", false, function(v)
+AntiAFKGroup:Toggle("Ativar Anti-AFK", false, function(v)
     antiAfkEnabled = v
+    AFKHud.Visible = v
 end)
 
 -- >>> TAB: CONFIGURAÇÕES
