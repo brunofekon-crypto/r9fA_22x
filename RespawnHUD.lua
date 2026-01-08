@@ -265,7 +265,6 @@ local AimbotCore = (function()
                 pcall(function()
                     local shouldTarget = true
                     if isSameTeam(targetPlayer) then shouldTarget = false end
-                    if isSameTeam(targetPlayer) then shouldTarget = false end
                     if targetPlayer.Team and ignoredTeams[targetPlayer.Team.Name] then shouldTarget = false end
                     if ignoredPlayers[targetPlayer.Name] then shouldTarget = false end
 
@@ -1929,6 +1928,19 @@ UtilityGroup:Button("Resetar Cursor (Emergência)", function()
     MouseUnlocker:SetUnlocked(true)
     task.wait(0.1)
     MouseUnlocker:SetUnlocked(false)
+end)
+
+local antiAfkEnabled = false
+game:GetService("Players").LocalPlayer.Idled:Connect(function()
+    if antiAfkEnabled then
+        local vu = game:GetService("VirtualUser")
+        vu:CaptureController()
+        vu:ClickButton2(Vector2.new())
+    end
+end)
+
+UtilityGroup:Toggle("Anti AFK", false, function(v)
+    antiAfkEnabled = v
 end)
 
 -- >>> TAB: CONFIGURAÇÕES
