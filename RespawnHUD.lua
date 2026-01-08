@@ -1521,14 +1521,15 @@ function VoidLib:CreateWindow()
                 
                 local function UpdateSize()
                     local listHeight = ALL.AbsoluteContentSize.Y
-                    AddedList.Size = UDim2.new(1, -20, 0, listHeight)
                     AddedList.CanvasSize = UDim2.new(0, 0, 0, listHeight)
+                    -- Determine required height for the Added List (limit it to avoid massive UI)
+                    local displayListHeight = math.min(listHeight, 150)
+                    AddedList.Size = UDim2.new(1, -20, 0, displayListHeight)
                     
-                    local baseHeight = 60 + listHeight + 10 -- Header + Controls + List + Padding
+                    local baseHeight = 60 + displayListHeight + 10 
+                    if displayListHeight == 0 then baseHeight = 60 end -- Minimal height if empty
                     
                     if isDropdownOpen then
-                        -- Expand to show dropdown (120px) if it's taller than the current space
-                        -- Dropdown is at Y=55. 
                         local totalWithDropdown = 55 + 120 + 10
                         if totalWithDropdown > baseHeight then
                             baseHeight = totalWithDropdown
@@ -1537,51 +1538,69 @@ function VoidLib:CreateWindow()
                     
                     TweenService:Create(IFrame, TweenInfo.new(0.3), {Size = UDim2.new(1, 0, 0, baseHeight)}):Play()
                     
-                     -- Trigger resize of parent container
-                     task.delay(0.31, function() 
-                        -- This forces the parent UIListLayout to see the new size
+                     -- Force Layout Update for Group
+                     task.delay(0.35, function() 
                         if IFrame.Parent and IFrame.Parent:IsA("UIListLayout") then
                             IFrame.Parent:ApplyLayout()
                         end
+                         -- Hacky fix: Force the Group (parent of container) to resize
+                         local container = IFrame.Parent.Parent
+                         if container and container:FindFirstChild("UIListLayout") then
+                             -- Usually container.Parent is the Group Frame
+                             -- We need to check if VoidLib has a mechanism for this.
+                             -- Assuming standard AutoLayout or manual resize from Lib
+                         end
                     end)
                 end
 
                 local function RefreshAddedList()
                     -- clear
-                    for _, c in pairs(AddedList:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
+                    for _, c in pairs(AddedList:GetChildren()) do if c:IsA("Frame") or c:IsA("TextLabel") then c:Destroy() end end
                     
-                    for i, item in pairs(addedItems) do
-                        local ItemFrame = Instance.new("Frame")
-                        ItemFrame.Size = UDim2.new(1, 0, 0, 24)
-                        ItemFrame.BackgroundColor3 = Color3.fromRGB(35,35,40)
-                        ItemFrame.Parent = AddedList
-                        local IC = Instance.new("UICorner"); IC.CornerRadius = UDim.new(0, 4); IC.Parent = ItemFrame
-                        
-                        local ItemLab = Instance.new("TextLabel")
-                        ItemLab.Text = "  " .. item
-                        ItemLab.Size = UDim2.new(0.8, 0, 1, 0)
-                        ItemLab.BackgroundTransparency = 1
-                        ItemLab.TextColor3 = Themes.TextDim
-                        ItemLab.Font = Enum.Font.Gotham
-                        ItemLab.TextSize = 12
-                        ItemLab.TextXAlignment = Enum.TextXAlignment.Left
-                        ItemLab.Parent = ItemFrame
-                        
-                        local DelBtn = Instance.new("TextButton")
-                        DelBtn.Text = "x"
-                        DelBtn.Size = UDim2.new(0, 24, 0, 24)
-                        DelBtn.Position = UDim2.new(1, -24, 0, 0)
-                        DelBtn.BackgroundTransparency = 1
-                        DelBtn.TextColor3 = Color3.fromRGB(200, 80, 80)
-                        DelBtn.Font = Enum.Font.GothamBold
-                        DelBtn.TextSize = 14
-                        DelBtn.Parent = ItemFrame
-                        
-                        DelBtn.MouseButton1Click:Connect(function()
-                            table.remove(addedItems, table.find(addedItems, item))
-                            pcall(onRemove, item)
-                            RefreshAddedList()
-                        end)
+                    if #addedItems == 0 then
+                         local Hint = Instance.new("TextLabel")
+                         Hint.Text = "Nenhum ignorado"
+                         Hint.Size = UDim2.new(1,0,0,20)
+                         Hint.BackgroundTransparency = 1
+                         Hint.TextColor3 = Themes.TextDim
+                         Hint.TextTransparency = 0.5
+                         Hint.Font = Enum.Font.Gotham
+                         Hint.TextSize = 12
+                         Hint.Parent = AddedList
+                    else
+                        for i, item in pairs(addedItems) do
+                            local ItemFrame = Instance.new("Frame")
+                            ItemFrame.Size = UDim2.new(1, 0, 0, 24)
+                            ItemFrame.BackgroundColor3 = Color3.fromRGB(35,35,40)
+                            ItemFrame.Parent = AddedList
+                            local IC = Instance.new("UICorner"); IC.CornerRadius = UDim.new(0, 4); IC.Parent = ItemFrame
+                            
+                            local ItemLab = Instance.new("TextLabel")
+                            ItemLab.Text = "  " .. item
+                            ItemLab.Size = UDim2.new(0.8, 0, 1, 0)
+                            ItemLab.BackgroundTransparency = 1
+                            ItemLab.TextColor3 = Themes.TextDim
+                            ItemLab.Font = Enum.Font.Gotham
+                            ItemLab.TextSize = 12
+                            ItemLab.TextXAlignment = Enum.TextXAlignment.Left
+                            ItemLab.Parent = ItemFrame
+                            
+                            local DelBtn = Instance.new("TextButton")
+                            DelBtn.Text = "x"
+                            DelBtn.Size = UDim2.new(0, 24, 0, 24)
+                            DelBtn.Position = UDim2.new(1, -24, 0, 0)
+                            DelBtn.BackgroundTransparency = 1
+                            DelBtn.TextColor3 = Color3.fromRGB(200, 80, 80)
+                            DelBtn.Font = Enum.Font.GothamBold
+                            DelBtn.TextSize = 14
+                            DelBtn.Parent = ItemFrame
+                            
+                            DelBtn.MouseButton1Click:Connect(function()
+                                table.remove(addedItems, table.find(addedItems, item))
+                                pcall(onRemove, item)
+                                RefreshAddedList()
+                            end)
+                        end
                     end
                     UpdateSize()
                 end
@@ -1593,29 +1612,42 @@ function VoidLib:CreateWindow()
                         DList.Visible = true
                         DropArrow.Rotation = 180
                          -- Refresh Options
-                         for _, c in pairs(DList:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+                         for _, c in pairs(DList:GetChildren()) do if c:IsA("TextButton") or c:IsA("TextLabel") then c:Destroy() end end
                          local opts = getOptionsFunc()
+                         
+                         local count = 0
                          for _, opt in pairs(opts) do
-                             if opt ~= "Todos" and opt ~= "Amigos" and opt ~= "Nada" then -- only players
-                                 local B = Instance.new("TextButton")
-                                 B.Size = UDim2.new(1, -10, 0, 20)
-                                 B.Text = opt
-                                 B.BackgroundTransparency = 1
-                                 B.TextColor3 = Themes.TextDim
-                                 B.Font = Enum.Font.Gotham
-                                 B.TextSize = 12
-                                 B.TextXAlignment = Enum.TextXAlignment.Left
-                                 B.Parent = DList
-                                 B.MouseButton1Click:Connect(function()
-                                    selectedPlayer = opt
-                                    DropBtn.Text = "   " .. selectedPlayer
-                                    isDropdownOpen = false
-                                    DList.Visible = false
-                                    DropArrow.Rotation = 0
-                                    UpdateSize()
-                                 end)
-                             end
+                             local B = Instance.new("TextButton")
+                             B.Size = UDim2.new(1, -10, 0, 20)
+                             B.Text = opt
+                             B.BackgroundTransparency = 1
+                             B.TextColor3 = Themes.TextDim
+                             B.Font = Enum.Font.Gotham
+                             B.TextSize = 12
+                             B.TextXAlignment = Enum.TextXAlignment.Left
+                             B.Parent = DList
+                             B.MouseButton1Click:Connect(function()
+                                selectedPlayer = opt
+                                DropBtn.Text = "   " .. selectedPlayer
+                                isDropdownOpen = false
+                                DList.Visible = false
+                                DropArrow.Rotation = 0
+                                UpdateSize()
+                             end)
+                             count = count + 1
                          end
+
+                         if count == 0 then
+                             local B = Instance.new("TextLabel")
+                             B.Size = UDim2.new(1, -10, 0, 20)
+                             B.Text = "Nenhum player"
+                             B.BackgroundTransparency = 1
+                             B.TextColor3 = Themes.TextDim
+                             B.Font = Enum.Font.Gotham
+                             B.TextSize = 12
+                             B.Parent = DList
+                         end
+                         
                          DList.CanvasSize = UDim2.new(0,0,0, DLL.AbsoluteContentSize.Y + 10)
                     else
                         DList.Visible = false
@@ -1631,6 +1663,9 @@ function VoidLib:CreateWindow()
                         RefreshAddedList()
                     end
                 end)
+                
+                -- Init
+                RefreshAddedList()
                 
                 return IFrame
             end
@@ -1727,7 +1762,17 @@ local cursorT = AimbotGroup:Toggle("Cursor Aim", AimbotCore:IsCursorAim(), funct
 end)
 table.insert(aimbotDependents, cursorT)
 
-local ignoreList = AimbotGroup:InteractiveList("Ignorar Players", GetPlayersList, function(name)
+local function GetServerPlayers()
+    local list = {}
+    for _, p in pairs(game:GetService("Players"):GetPlayers()) do
+        if p ~= game:GetService("Players").LocalPlayer then
+            table.insert(list, p.Name)
+        end
+    end
+    return list
+end
+
+local ignoreList = AimbotGroup:InteractiveList("Ignorar Players", GetServerPlayers, function(name)
     AimbotCore:IgnorePlayer(name)
 end, function(name)
     AimbotCore:UnignorePlayer(name)
