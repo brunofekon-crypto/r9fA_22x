@@ -441,8 +441,8 @@ local KillAuraCore = (function()
                 elseif targetMode == "Amigos" then
                     if player:IsFriendsWith(targetPlayer.UserId) and isTeamMatch(targetPlayer) then shouldCheck = true end
                 else
-                    -- Specific Player (PRIORITY: IGNORE TEAM FILTER)
-                    if targetPlayer.Name == targetMode or targetPlayer.DisplayName == targetMode then
+                    -- Specific Player (modified: MUST MATCH TEAM if one is selected)
+                    if (targetPlayer.Name == targetMode or targetPlayer.DisplayName == targetMode) and isTeamMatch(targetPlayer) then
                         shouldCheck = true 
                     end
                 end
@@ -475,6 +475,10 @@ local KillAuraCore = (function()
         if currentTarget then
             local char = currentTarget.Character
             if not char or not char:FindFirstChild("HumanoidRootPart") or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then
+                currentTarget = nil
+            end
+            -- Validte Team in Real-Time (e.g. Prison Life arrest)
+            if currentTarget and not isTeamMatch(currentTarget) then
                 currentTarget = nil
             end
         end
