@@ -982,6 +982,10 @@ function VoidLib:CreateWindow()
     TabContainer.ScrollBarThickness = 0
     TabContainer.Parent = Sidebar
     local TabList = Instance.new("UIListLayout"); TabList.Padding = UDim.new(0, 5); TabList.SortOrder = Enum.SortOrder.LayoutOrder; TabList.Parent = TabContainer
+    
+    TabList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        TabContainer.CanvasSize = UDim2.new(0, 0, 0, TabList.AbsoluteContentSize.Y + 10)
+    end)
 
     -- Profile Section
     local Profile = Instance.new("Frame")
