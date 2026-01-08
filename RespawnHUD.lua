@@ -1509,9 +1509,10 @@ local legitT = AimbotGroup:Toggle("Modo Legit", getgenv().LegitMode, function(v)
     getgenv().LegitMode = v
 end)
 
-AimbotGroup:Toggle("Cursor Aim", getgenv().CursorAim, function(v)
+local cursorAimT = AimbotGroup:Toggle("Cursor Aim", getgenv().CursorAim, function(v)
     getgenv().CursorAim = v
 end)
+table.insert(aimbotDependents, cursorAimT)
 table.insert(aimbotDependents, legitT)
 
 local fovS = AimbotGroup:Slider("Campo de Visão (FOV)", 20, 500, AimbotCore:GetFOV(), function(v)
