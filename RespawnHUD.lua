@@ -2058,6 +2058,26 @@ AntiAFKGroup:Toggle("Ativar Anti-AFK", false, function(v)
     AFKHud.Visible = v
 end)
 
+-- >>> TAB: PRE-CONFIGS (BotMe)
+local BotMe = Win:Tab("BotMe")
+local BotGroup = BotMe:Group("Gerenciamento de Bot")
+
+local botListItems = {} -- Placeholder for list items
+local function GetBotList()
+    return botListItems
+end
+
+local botList = BotGroup:InteractiveList("Lista", GetBotList, function(name)
+    table.insert(botListItems, name)
+end, function(name)
+    for i, v in ipairs(botListItems) do
+        if v == name then
+            table.remove(botListItems, i)
+            break
+        end
+    end
+end)
+
 -- >>> TAB: CONFIGURAÇÕES
 local Settings = Win:Tab("Configs")
 local ManagerGroup = Settings:Group("Gerenciamento")
