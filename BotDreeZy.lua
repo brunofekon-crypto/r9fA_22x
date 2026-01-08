@@ -8,9 +8,10 @@ local currentTargetName = nil
 local isEnabled = false
 local loopConnection = nil
 local lastPathTime = 0
-local currentPath = nil
 local currentWaypoints = nil
 local currentWaypointIndex = 0
+local lastPosition = Vector3.new(0,0,0)
+local stuckTimer = 0
 
 -- Configuration
 local Config = {
@@ -19,7 +20,8 @@ local Config = {
     TeleportDistance = 120,
     PathUpdateInterval = 0.5,
     RaycastDistance = 5,
-    StuckThreshold = 2
+    StuckThreshold = 2,
+    JumpPower = 50
 }
 
 local function getRoot(char)
@@ -43,7 +45,6 @@ local function CheckObstacle(rootPart)
     local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
     
     if result then
-        -- Obstacle detected
         return true, result
     end
     return false, nil
@@ -79,13 +80,25 @@ local function UpdateBot()
         return
     end
     
+    -- Stuck Detection
+    if (myRoot.Position - lastPosition).Magnitude < 0.2 then
+        stuckTimer = stuckTimer + RunService.Heartbeat:Wait()
+        if stuckTimer > Config.StuckThreshold then
+            myHum.Jump = true
+            stuckTimer = 0
+        end
+    else
+        stuckTimer = 0
+    end
+    lastPosition = myRoot.Position
+
     -- 2. Follow Logic
     if dist > Config.MaxDistance then
         -- Calculate goal: Behind player
-        local goalDetails = targetRoot.CFrame * CFrame.new(0, 0, 10) -- 10 studs behind
+        local goalDetails = targetRoot.CFrame * CFrame.new(0, 0, 5) 
         local goalPos = goalDetails.Position
         
-        -- Pathfinding
+        -- Pathfinding Logic
         if tick() - lastPathTime > Config.PathUpdateInterval then
             lastPathTime = tick()
             
@@ -94,7 +107,7 @@ local function UpdateBot()
                 AgentHeight = 5,
                 AgentCanJump = true,
                 AgentJumpHeight = 10,
-                WaypointSpacing = 4
+                WaypointSpacing = 8 -- Optimized spacing
             })
             
             local success, errorMessage = pcall(function()
@@ -106,15 +119,16 @@ local function UpdateBot()
                 currentWaypointIndex = 2 -- Skip current pos
             else
                 currentWaypoints = nil
-                -- Fallback to direct move if path fails
+                -- Fallback to direct move
                 MoveTo(goalPos)
             end
         end
         
+        -- Execute Path
         if currentWaypoints and currentWaypointIndex <= #currentWaypoints then
             local waypoint = currentWaypoints[currentWaypointIndex]
             
-            -- Simple Raycast Check for walls in front
+            -- Raycast for immediate obstacles
             local isBlocked, hit = CheckObstacle(myRoot)
             if isBlocked then
                 myHum.Jump = true
@@ -127,11 +141,12 @@ local function UpdateBot()
             myHum:MoveTo(waypoint.Position)
             
             -- Check if reached waypoint
-            if (myRoot.Position - waypoint.Position).Magnitude < 4 then
+            local distToWaypoint = (myRoot.Position - waypoint.Position).Magnitude
+            if distToWaypoint < 6 then -- Threshold to switch to next waypoint
                 currentWaypointIndex = currentWaypointIndex + 1
             end
         else
-            -- Direct move fallback
+            -- Direct move fallback if no path or finished
              MoveTo(goalPos)
         end
         
@@ -143,6 +158,9 @@ end
 
 function BotCore:SetTarget(name)
     currentTargetName = name
+    -- Reset pathing state on target switch
+    currentWaypoints = nil
+    currentWaypointIndex = 0
 end
 
 function BotCore:SetEnabled(state)
