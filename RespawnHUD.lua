@@ -955,10 +955,10 @@ local BotCore = (function()
 
         if (myRoot.Position - lastPosition).Magnitude < 0.2 and dist > 5 then
             stuckTimer = stuckTimer + RunService.Heartbeat:Wait()
-            if stuckTimer > Config.StuckThreshold then
+            if stuckTimer > 4 then -- Increased from 2 to 4s
+                warn("[BotAction] Stuck! Jumping to unstuck.")
                 myHum.Jump = true
-                -- Side step
-                myRoot.CFrame = myRoot.CFrame * CFrame.new(2,0,0) 
+                -- Removed CFrame teleport (caused glitching)
                 stuckTimer = 0
             end
         else
