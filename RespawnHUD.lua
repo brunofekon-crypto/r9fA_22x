@@ -40,6 +40,7 @@ if not getgenv().AimbotFOV then getgenv().AimbotFOV = 100 end
 if not getgenv().AimbotEasing then getgenv().AimbotEasing = 1 end
 if getgenv().TeamCheck == nil then getgenv().TeamCheck = false end
 if getgenv().LegitMode == nil then getgenv().LegitMode = false end -- New Legit Mode
+if getgenv().KillAuraEnabled == nil then getgenv().KillAuraEnabled = false end -- Kill Aura
 if getgenv().ESPHealth == nil then getgenv().ESPHealth = false end
 if getgenv().ESPEnabled == nil then getgenv().ESPEnabled = false end
 if getgenv().ESPNames == nil then getgenv().ESPNames = false end
@@ -378,6 +379,85 @@ local AimbotCore = (function()
     end
     updateFOVCircle()
     return AimbotCore
+end)()
+
+-- [2.5] KILL AURA CORE
+local KillAuraCore = (function()
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local KillAura = {}
+    local player = Players.LocalPlayer
+    local isEnabled = false
+
+    local function isSameTeam(targetPlayer)
+        if not getgenv().TeamCheck then return false end
+        if player.Team and targetPlayer.Team then return player.Team == targetPlayer.Team end
+        if player.TeamColor and targetPlayer.TeamColor then return player.TeamColor == targetPlayer.TeamColor end
+        return false
+    end
+
+    local function findNearestTarget()
+        local nearestTarget = nil
+        local nearestDistance = math.huge
+        local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if not myRoot then return nil end
+
+        for _, targetPlayer in pairs(Players:GetPlayers()) do
+            if targetPlayer ~= player and not isSameTeam(targetPlayer) then
+                local char = targetPlayer.Character
+                if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
+                    local dist = (char.HumanoidRootPart.Position - myRoot.Position).Magnitude
+                    if dist < nearestDistance then
+                        nearestDistance = dist
+                        nearestTarget = targetPlayer
+                    end
+                end
+            end
+        end
+        return nearestTarget
+    end
+
+    local currentTarget = nil
+
+    RunService.Heartbeat:Connect(function()
+        if not isEnabled then 
+            currentTarget = nil
+            return 
+        end
+
+        -- Check if current target is still valid
+        if currentTarget then
+            local char = currentTarget.Character
+            if not char or not char:FindFirstChild("HumanoidRootPart") or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then
+                currentTarget = nil
+            end
+        end
+
+        -- Find new target if we don't have one
+        if not currentTarget then
+            currentTarget = findNearestTarget()
+        end
+
+        -- Teleport execution
+        if currentTarget and currentTarget.Character and currentTarget.Character:FindFirstChild("HumanoidRootPart") then
+             if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local targetRoot = currentTarget.Character.HumanoidRootPart
+                -- Teleport 4 studs behind the target
+                -- CFrame.new(0, 0, 4) puts us 4 studs backwards relative to target's facing direction
+                local newCFrame = targetRoot.CFrame * CFrame.new(0, 0, 4)
+                player.Character.HumanoidRootPart.CFrame = newCFrame
+             end
+        end
+    end)
+
+    function KillAura:SetEnabled(enabled)
+        isEnabled = enabled
+        if getgenv then getgenv().KillAuraEnabled = enabled end
+    end
+    function KillAura:IsEnabled() return isEnabled end
+    if getgenv then isEnabled = getgenv().KillAuraEnabled or false else isEnabled = false end
+
+    return KillAura
 end)()
 
 -- [3] HEAD ESP
@@ -1263,6 +1343,11 @@ for _, frame in pairs(aimbotDependents) do
     frame.Visible = isAimbotEnabled
 end
 
+local KillAuraGroup = Combat:Group("Kill Aura")
+KillAuraGroup:Toggle("Kill Player(s)", KillAuraCore:IsEnabled(), function(v)
+    KillAuraCore:SetEnabled(v)
+end)
+
 -- >>> TAB: VISUAL
 local Visual = Win:Tab("Visual")
 
@@ -1344,6 +1429,7 @@ ManagerGroup:Button("Salvar Configurações", function()
             aimbot = AimbotCore:IsEnabled(),
             teamCheck = getgenv().TeamCheck,
             legitMode = getgenv().LegitMode,
+            killAura = KillAuraCore:IsEnabled(),
             fov = AimbotCore:GetFOV(),
             esp = ESPCore:IsEnabled(),
             espNames = getgenv().ESPNames,
@@ -1368,6 +1454,7 @@ ManagerGroup:Button("Carregar Configurações", function()
             AimbotCore:SetEnabled(config.aimbot)
             getgenv().TeamCheck = config.teamCheck
             getgenv().LegitMode = config.legitMode or false
+            KillAuraCore:SetEnabled(config.killAura or false)
             AimbotCore:SetFOV(config.fov)
             ESPCore:SetEnabled(config.esp)
             getgenv().ESPNames = config.espNames or false
