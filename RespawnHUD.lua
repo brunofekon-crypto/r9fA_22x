@@ -1688,6 +1688,7 @@ function VoidLib:CreateWindow()
     end
     Main.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if getgenv().IsDraggingMiniHUD then return end -- Prevent conflict
             dragging = true; dragStart = input.Position; startPos = Main.Position
             input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
         end
@@ -1950,6 +1951,7 @@ AFKHud.ZIndex = 100 -- Ensure it's above Main
 local draggingAFK, dragInputAFK, dragStartAFK, startPosAFK
 AFKHud.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        getgenv().IsDraggingMiniHUD = true -- Signal conflict prevention
         draggingAFK = true
         dragStartAFK = input.Position
         startPosAFK = AFKHud.Position
@@ -1957,6 +1959,7 @@ AFKHud.InputBegan:Connect(function(input)
         input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then
                 draggingAFK = false
+                getgenv().IsDraggingMiniHUD = false
             end
         end)
     end
