@@ -1943,7 +1943,31 @@ AFKHud.BorderSizePixel = 0
 AFKHud.Visible = false
 AFKHud.Parent = SG
 AFKHud.Active = true
-AFKHud.Draggable = true 
+-- AFKHud.Draggable = true (Deprecated and causes conflicts)
+AFKHud.ZIndex = 100 -- Ensure it's above Main
+
+-- Custom Dragging for Mini-HUD
+local draggingAFK, dragInputAFK, dragStartAFK, startPosAFK
+AFKHud.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        draggingAFK = true
+        dragStartAFK = input.Position
+        startPosAFK = AFKHud.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                draggingAFK = false
+            end
+        end)
+    end
+end)
+
+AFKHud.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement and draggingAFK then
+        local delta = input.Position - dragStartAFK
+        AFKHud.Position = UDim2.new(startPosAFK.X.Scale, startPosAFK.X.Offset + delta.X, startPosAFK.Y.Scale, startPosAFK.Y.Offset + delta.Y)
+    end
+end) 
 
 local AFKCorner = Instance.new("UICorner"); AFKCorner.CornerRadius = UDim.new(0, 8); AFKCorner.Parent = AFKHud
 local AFKStroke = Instance.new("UIStroke"); AFKStroke.Color = Themes.Accent; AFKStroke.Thickness = 1; AFKStroke.Parent = AFKHud
