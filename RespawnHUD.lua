@@ -859,20 +859,30 @@ local BotCore = (function()
         end
     end
 
+    local lastDebugPrint = 0
     local function UpdateBot()
         if not isEnabled then return end
-        if not currentTargetName then 
-            -- warn("No target name")
+        
+        -- Heartbeat Debug (Every 1s)
+        if tick() - lastDebugPrint > 1 then
+            warn("[BotHeartbeat] Active. Target: " .. tostring(currentTargetName))
+            lastDebugPrint = tick()
+        end
+
+        if not currentTargetName or currentTargetName == "Nenhum" then 
             return 
         end
         
         local targetPlr = Players:FindFirstChild(currentTargetName)
         if not targetPlr then 
-            warn("Target player not found: " .. tostring(currentTargetName))
+            warn("[BotError] Target player not found in Players service: " .. tostring(currentTargetName))
             return 
         end
         
-        if not targetPlr.Character then return end
+        if not targetPlr.Character then 
+            -- warn("[BotInfo] Target has no character (dead?)")
+            return 
+        end
         
         local myChar = LocalPlayer.Character
         if not myChar then return end
@@ -880,13 +890,24 @@ local BotCore = (function()
         local targetRoot = getRoot(targetPlr.Character)
         local myHum = getHumanoid(myChar)
         
-        if not myRoot or not targetRoot or not myHum then return end
+        if not myRoot then 
+            warn("[BotError] Local RootPart missing") 
+            return 
+        end
+        if not targetRoot then
+             -- Silent return if target root missing (e.g. just spawned)
+             return
+        end
+        if not myHum then
+            warn("[BotError] Local Humanoid missing")
+            return
+        end
         
         local dist = (myRoot.Position - targetRoot.Position).Magnitude
         
         -- 1. Teleport if too far
         if dist > Config.TeleportDistance then
-            warn("Teleporter Triggered! Dist: " .. dist)
+            warn("[BotAction] Teleporting! Dist: " .. dist)
             myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 5)
             return
         end
@@ -895,7 +916,7 @@ local BotCore = (function()
         if (myRoot.Position - lastPosition).Magnitude < 0.2 then
             stuckTimer = stuckTimer + RunService.Heartbeat:Wait()
             if stuckTimer > Config.StuckThreshold then
-                warn("Stuck detected! Jumping.")
+                warn("[BotAction] Stuck detected! Jumping.")
                 myHum.Jump = true
                 stuckTimer = 0
             end
@@ -930,7 +951,7 @@ local BotCore = (function()
                     currentWaypoints = path:GetWaypoints()
                     currentWaypointIndex = 2 -- Skip current pos
                 else
-                    warn("Path failed! Status: " .. tostring(path.Status))
+                    warn("[BotWarning] Path failed via PFService: " .. tostring(path.Status))
                     currentWaypoints = nil
                     -- Fallback to direct move
                     MoveTo(goalPos)
@@ -963,6 +984,33 @@ local BotCore = (function()
             
         elseif dist < Config.MinDistance then
             myHum:MoveTo(myRoot.Position)
+        end
+    end
+
+    function BotCore:SetTarget(name)
+        warn("[BotDebug] SetTarget called with: " .. tostring(name))
+        currentTargetName = name
+        currentWaypoints = nil
+        currentWaypointIndex = 0
+    end
+
+    function BotCore:SetEnabled(state)
+        warn("[BotDebug] SetEnabled called with state: " .. tostring(state))
+        isEnabled = state
+        if state then
+            if not loopConnection then
+                warn("[BotDebug] Starting loop...")
+                loopConnection = RunService.Heartbeat:Connect(UpdateBot)
+            end
+        else
+            if loopConnection then
+                warn("[BotDebug] Stopping loop...")
+                loopConnection:Disconnect()
+                loopConnection = nil
+            end
+            if LocalPlayer.Character and getHumanoid(LocalPlayer.Character) then
+                 getHumanoid(LocalPlayer.Character):MoveTo(LocalPlayer.Character.HumanoidRootPart.Position)
+            end
         end
     end
 
