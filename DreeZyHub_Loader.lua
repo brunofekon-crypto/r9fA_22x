@@ -159,6 +159,39 @@ local Combat = (function()
         local isEnabled, isActive, fovCircle, isDrawingApiAvailable = false, false, nil, false
         pcall(function() if Drawing then fovCircle = Drawing.new("Circle"); fovCircle.Visible = false; fovCircle.Thickness = 2; fovCircle.Color = Color3.new(1,1,1); fovCircle.Transparency = 0.5; fovCircle.Filled = false; isDrawingApiAvailable = true end end)
 
+        local currentLegitPart = nil
+        local currentTargetChar = nil
+        
+        local function getLegitPart(char)
+            if not char then return nil end
+            if currentTargetChar ~= char then
+                currentTargetChar = char
+                currentLegitPart = nil
+            end
+            if currentLegitPart and char:FindFirstChild(currentLegitPart.Name) then 
+                return currentLegitPart 
+            end
+            
+            local parts = {"HumanoidRootPart", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg", "Head"}
+            local available = {}
+            for _, name in pairs(parts) do
+                local p = char:FindFirstChild(name)
+                if p then table.insert(available, p) end
+            end
+            
+            if #available > 0 then
+                -- 40% Head, 60% Random Body
+                if math.random() > 0.6 then
+                    currentLegitPart = char:FindFirstChild("Head") or available[math.random(#available)]
+                else
+                    currentLegitPart = available[math.random(#available)]
+                end
+            else
+                currentLegitPart = char:FindFirstChild("Head")
+            end
+            return currentLegitPart
+        end
+
         local function isTargetVisible(targetPart, char)
             local cp = camera.CFrame.Position
             local _, onscreen = camera:WorldToViewportPoint(targetPart.Position)
@@ -209,7 +242,6 @@ local Combat = (function()
 
         mouse.Button2Down:Connect(function() if isEnabled and getgenv().AimbotInput == "RightClick" then isActive = true end end)
         mouse.Button2Up:Connect(function() if isEnabled and getgenv().AimbotInput == "RightClick" then isActive = false end end)
-        -- ... (Other inputs omitted for brevity but logic is same)
         
         -- Logic Loop
         local currentTarget = nil
@@ -218,13 +250,15 @@ local Combat = (function()
         -- Render Loop
         RunService.RenderStepped:Connect(function()
             if isActive and isEnabled and currentTarget and currentTarget.Character and currentTarget.Character:FindFirstChild("Head") then
-                local targetInst = currentTarget.Character.Head -- Simple Head Lock for bundled version
-                if getgenv().LegitMode and math.random() > 0.4 then 
-                    local parts = {"HumanoidRootPart","Torso","Left Arm","Right Arm"}; 
-                    local p = currentTarget.Character:FindFirstChild(parts[math.random(#parts)])
-                    if p then targetInst = p end
+                local targetInst = currentTarget.Character.Head 
+                
+                if getgenv().LegitMode then
+                    targetInst = getLegitPart(currentTarget.Character) or targetInst
                 end
-                camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, targetInst.Position), getgenv().AimbotEasing or 1)
+
+                if targetInst then
+                    camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, targetInst.Position), getgenv().AimbotEasing or 1)
+                end
             end
             if isEnabled then updateFOVCircle() elseif fovCircle then fovCircle.Visible = false end
         end)
@@ -299,52 +333,114 @@ local Visuals = (function()
         if not Drawing then return {} end
         local ESPCore = {}
         local isEnabled = false
-        -- Simplified ESP Logic for bundle
         local drawings = {} 
-        local function createDrawings(p)
-            drawings[p] = {Box=Drawing.new("Square"), Name=Drawing.new("Text"), Line=Drawing.new("Line")}
-            drawings[p].Box.Visible=false; drawings[p].Box.Color=Color3.new(1,1,1); drawings[p].Box.Thickness=1; drawings[p].Box.Filled=false
-            drawings[p].Name.Visible=false; drawings[p].Name.Color=Color3.new(1,1,1); drawings[p].Name.Size=14; drawings[p].Name.Center=true; drawings[p].Name.Outline=true
-            drawings[p].Line.Visible=false; drawings[p].Line.Color=Color3.new(1,1,1); drawings[p].Line.Thickness=1
+
+        local function isSameTeam(target)
+            local p = Players.LocalPlayer
+            if not getgenv().TeamCheck then return false end
+            if p.Team and target.Team then return p.Team == target.Team end
+            if p.TeamColor and target.TeamColor then return p.TeamColor == target.TeamColor end
+            return false
         end
+
+        local function createDrawings(p)
+            drawings[p] = {
+                Box = Drawing.new("Square"), 
+                Name = Drawing.new("Text"), 
+                Line = Drawing.new("Line"),
+                HealthBack = Drawing.new("Square"),
+                HealthBar = Drawing.new("Square")
+            }
+            local d = drawings[p]
+            -- Box
+            d.Box.Visible=false; d.Box.Color=Color3.new(1,1,1); d.Box.Thickness=1; d.Box.Filled=false
+            -- Name
+            d.Name.Visible=false; d.Name.Color=Color3.new(1,1,1); d.Name.Size=14; d.Name.Center=true; d.Name.Outline=true
+            -- Tracer
+            d.Line.Visible=false; d.Line.Color=Color3.new(1,1,1); d.Line.Thickness=1
+            -- Health
+            d.HealthBack.Visible=false; d.HealthBack.Color=Color3.new(0,0,0); d.HealthBack.Filled=true; d.HealthBack.Transparency=1
+            d.HealthBar.Visible=false; d.HealthBar.Color=Color3.new(0,1,0); d.HealthBar.Filled=true; d.HealthBar.Transparency=1
+        end
+
         local function removeDrawings(p)
             if drawings[p] then 
-                drawings[p].Box:Remove(); drawings[p].Name:Remove(); drawings[p].Line:Remove()
+                for _, obj in pairs(drawings[p]) do obj:Remove() end
                 drawings[p] = nil 
             end
         end
         Players.PlayerRemoving:Connect(function(p) removeDrawings(p) end)
         
         RunService.RenderStepped:Connect(function()
-            if not isEnabled then for _, d in pairs(drawings) do d.Box.Visible=false; d.Name.Visible=false; d.Line.Visible=false end return end
+            if not isEnabled then 
+                for _, d in pairs(drawings) do 
+                    for _, obj in pairs(d) do obj.Visible=false end 
+                end 
+                return 
+            end
+
             for _, p in pairs(Players:GetPlayers()) do
-                if p ~= Players.LocalPlayer and p.Character then
-                    if not drawings[p] then createDrawings(p) end
-                    local d = drawings[p]
-                    local root = p.Character:FindFirstChild("HumanoidRootPart")
-                    local hum = p.Character:FindFirstChild("Humanoid")
-                    if root and hum and hum.Health > 0 then
-                        local pos, vis = workspace.CurrentCamera:WorldToViewportPoint(root.Position)
-                        if vis then
-                            local headPos = workspace.CurrentCamera:WorldToViewportPoint(root.Position + Vector3.new(0,2,0))
-                            local legPos = workspace.CurrentCamera:WorldToViewportPoint(root.Position - Vector3.new(0,3,0))
-                            local h = (headPos.Y - legPos.Y) * -1
-                            local w = h * 0.6
-                            d.Box.Visible = true; d.Box.Size = Vector2.new(w, h); d.Box.Position = Vector2.new(pos.X - w/2, headPos.Y)
-                            if getgenv().ESPNames then d.Name.Visible = true; d.Name.Text = p.Name; d.Name.Position = Vector2.new(pos.X, headPos.Y - 16) else d.Name.Visible = false end
-                            if getgenv().ESPTracers then d.Line.Visible = true; d.Line.From = Vector2.new(workspace.CurrentCamera.ViewportSize.X/2, workspace.CurrentCamera.ViewportSize.Y); d.Line.To = Vector2.new(pos.X, pos.Y) else d.Line.Visible = false end
-                        else
-                            d.Box.Visible=false; d.Name.Visible=false; d.Line.Visible=false
-                        end
-                    else
-                        d.Box.Visible=false; d.Name.Visible=false; d.Line.Visible=false
-                    end
+                if p ~= Players.LocalPlayer then
+                     -- Check existence
+                     if not drawings[p] then createDrawings(p) end
+                     local d = drawings[p]
+                     
+                     local shouldShow = false
+                     local root = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+                     local hum = p.Character and p.Character:FindFirstChild("Humanoid")
+
+                     if root and hum and hum.Health > 0 then
+                         if not isSameTeam(p) then
+                            local pos, vis = workspace.CurrentCamera:WorldToViewportPoint(root.Position)
+                            if vis then
+                                shouldShow = true
+                                local headPos = workspace.CurrentCamera:WorldToViewportPoint(root.Position + Vector3.new(0,2,0))
+                                local legPos = workspace.CurrentCamera:WorldToViewportPoint(root.Position - Vector3.new(0,3,0))
+                                local h = (headPos.Y - legPos.Y) * -1
+                                local w = h * 0.6
+                                
+                                -- Box
+                                d.Box.Visible = true
+                                d.Box.Size = Vector2.new(w, h)
+                                d.Box.Position = Vector2.new(pos.X - w/2, headPos.Y)
+
+                                -- Name
+                                if getgenv().ESPNames then 
+                                    d.Name.Visible = true; d.Name.Text = p.Name; d.Name.Position = Vector2.new(pos.X, headPos.Y - 16) 
+                                else d.Name.Visible = false end
+
+                                -- Tracer
+                                if getgenv().ESPTracers then 
+                                    d.Line.Visible = true; d.Line.From = Vector2.new(workspace.CurrentCamera.ViewportSize.X/2, workspace.CurrentCamera.ViewportSize.Y); d.Line.To = Vector2.new(pos.X, pos.Y) 
+                                else d.Line.Visible = false end
+
+                                -- Health Bar
+                                if getgenv().ESPHealth then
+                                    d.HealthBack.Visible = true
+                                    d.HealthBack.Size = Vector2.new(2, h)
+                                    d.HealthBack.Position = Vector2.new((pos.X - w/2) - 5, headPos.Y)
+                                    
+                                    d.HealthBar.Visible = true
+                                    local healthY = h * (hum.Health / hum.MaxHealth)
+                                    d.HealthBar.Size = Vector2.new(2, healthY)
+                                    d.HealthBar.Position = Vector2.new((pos.X - w/2) - 5, headPos.Y + (h - healthY))
+                                    d.HealthBar.Color = Color3.fromHSV((hum.Health/hum.MaxHealth)*0.3, 1, 1) -- Green to Red
+                                else
+                                    d.HealthBack.Visible = false; d.HealthBar.Visible = false
+                                end
+                            end
+                         end
+                     end
+
+                     if not shouldShow then
+                        for _, obj in pairs(d) do obj.Visible = false end
+                     end
                 elseif drawings[p] then
-                    drawings[p].Box.Visible=false; drawings[p].Name.Visible=false; drawings[p].Line.Visible=false
+                    for _, obj in pairs(drawings[p]) do obj.Visible=false end
                 end
             end
         end)
-        function ESPCore:SetEnabled(v) isEnabled = v; if not v then for _, d in pairs(drawings) do d.Box.Visible=false; d.Name.Visible=false; d.Line.Visible=false end end end
+        function ESPCore:SetEnabled(v) isEnabled = v; if not v then for _, d in pairs(drawings) do for _, obj in pairs(d) do obj.Visible=false end end end end
         function ESPCore:IsEnabled() return isEnabled end
         return ESPCore
     end)()
@@ -357,72 +453,111 @@ end)()
 local UI = (function()
     local UI = {}
     local VoidLib = {}
+    local TweenService = game:GetService("TweenService")
+    local UserInputService = game:GetService("UserInputService")
     
     function VoidLib:CreateWindow()
          local Themes = {Background=Color3.fromRGB(17,17,20), Accent=Color3.fromHex("#B507E0")}
          
-         local SG = Instance.new("ScreenGui"); SG.Parent = game:GetService("CoreGui"); SG.Name = "DreeZyVoidware"
+         local SG = Instance.new("ScreenGui"); SG.Parent = game:GetService("CoreGui"); SG.Name = "DreeZyVoidware"; SG.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
          local Main = Instance.new("Frame"); Main.Size = UDim2.new(0,650,0,480); Main.Position = UDim2.new(0.5,-325,0.5,-240); Main.BackgroundColor3 = Themes.Background; Main.Parent = SG;
          Instance.new("UICorner", Main).CornerRadius = UDim.new(0,10)
          
+         -- Make Draggable
+         local dragging, dragInput, dragStart, startPos
+         local function update(input)
+            local delta = input.Position - dragStart
+            Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+         end
+         Main.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true; dragStart = input.Position; startPos = Main.Position
+                input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+            end
+         end)
+         Main.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end end)
+         UserInputService.InputChanged:Connect(function(input) if input == dragInput and dragging then update(input) end end)
+
          -- Tabs
          local TabHolder = Instance.new("Frame", Main); TabHolder.Size = UDim2.new(0,150,1,0); TabHolder.BackgroundColor3 = Color3.fromRGB(25,25,30)
+         Instance.new("UICorner", TabHolder).CornerRadius = UDim.new(0,10)
          local Content = Instance.new("Frame", Main); Content.Size = UDim2.new(1,-150,1,0); Content.Position = UDim2.new(0,150,0,0); Content.BackgroundTransparency=1
-         local List = Instance.new("UIListLayout", TabHolder); List.Padding = UDim.new(0,5)
+         local List = Instance.new("UIListLayout", TabHolder); List.Padding = UDim.new(0,5); List.HorizontalAlignment = Enum.HorizontalAlignment.Center
          
+         -- Padding for TabHolder
+         local TP = Instance.new("UIPadding", TabHolder); TP.PaddingTop=UDim.new(0,10)
+
          local Window = {Tabs={}}
          function Window:Tab(name)
-             local Btn = Instance.new("TextButton", TabHolder); Btn.Size = UDim2.new(1,0,0,40); Btn.Text = name; Btn.TextColor3 = Color3.new(1,1,1); Btn.BackgroundTransparency=1
-             local Page = Instance.new("ScrollingFrame", Content); Page.Size = UDim2.new(1,0,1,0); Page.Visible=false; Page.BackgroundTransparency=1; Page.ScrollBarThickness=4
-             Instance.new("UIListLayout", Page).Padding = UDim.new(0,5)
+             local Btn = Instance.new("TextButton", TabHolder); Btn.Size = UDim2.new(0.9,0,0,40); Btn.Text = name; Btn.TextColor3 = Color3.new(0.7,0.7,0.7); Btn.BackgroundTransparency=1; Btn.Font=Enum.Font.GothamBold; Btn.TextSize=14
+             local Page = Instance.new("ScrollingFrame", Content); Page.Size = UDim2.new(1,0,1,0); Page.Visible=false; Page.BackgroundTransparency=1; Page.ScrollBarThickness=2; Page.ScrollBarImageColor3=Themes.Accent
+             Instance.new("UIListLayout", Page).Padding = UDim.new(0,5); Instance.new("UIPadding", Page).PaddingLeft=UDim.new(0,10); Instance.new("UIPadding", Page).PaddingTop=UDim.new(0,10)
              
              Btn.MouseButton1Click:Connect(function() 
-                 for _,t in pairs(Window.Tabs) do t.Page.Visible=false end; Page.Visible=true 
+                 for _,t in pairs(Window.Tabs) do 
+                    t.Page.Visible=false
+                    TweenService:Create(t.Btn, TweenInfo.new(0.3), {TextColor3=Color3.new(0.7,0.7,0.7)}):Play()
+                 end
+                 Page.Visible=true
+                 TweenService:Create(Btn, TweenInfo.new(0.3), {TextColor3=Themes.Accent}):Play()
              end)
-             if #Window.Tabs==0 then Page.Visible=true end
-             table.insert(Window.Tabs, {Page=Page})
+             
+             if #Window.Tabs==0 then 
+                Page.Visible=true 
+                Btn.TextColor3 = Themes.Accent
+             end
+             table.insert(Window.Tabs, {Page=Page, Btn=Btn})
              
              local TabObj = {}
              function TabObj:Group(txt)
-                 local Grp = Instance.new("Frame", Page); Grp.Size = UDim2.new(1,-10,0,0); Grp.AutomaticSize = Enum.AutomaticSize.Y; Grp.BackgroundColor3 = Color3.fromRGB(30,30,35)
+                 local Grp = Instance.new("Frame", Page); Grp.Size = UDim2.new(0.95,0,0,0); Grp.AutomaticSize = Enum.AutomaticSize.Y; Grp.BackgroundColor3 = Color3.fromRGB(30,30,35)
                  Instance.new("UICorner", Grp)
-                 local GrpLabel = Instance.new("TextLabel", Grp); GrpLabel.Text=txt; GrpLabel.Size=UDim2.new(1,0,0,25); GrpLabel.BackgroundTransparency=1; GrpLabel.TextColor3=Themes.Accent; GrpLabel.Font=Enum.Font.GothamBold; GrpLabel.TextSize=14
+                 local GrpLabel = Instance.new("TextLabel", Grp); GrpLabel.Text=txt; GrpLabel.Size=UDim2.new(1,0,0,30); GrpLabel.BackgroundTransparency=1; GrpLabel.TextColor3=Themes.Accent; GrpLabel.Font=Enum.Font.GothamBold; GrpLabel.TextSize=14
                  local GrpLayout = Instance.new("UIListLayout", Grp); GrpLayout.Padding = UDim.new(0,5); GrpLayout.SortOrder = Enum.SortOrder.LayoutOrder
-                 
+                 Instance.new("UIPadding", Grp).PaddingLeft=UDim.new(0,10); Instance.new("UIPadding", Grp).PaddingTop=UDim.new(0,5); Instance.new("UIPadding", Grp).PaddingBottom=UDim.new(0,10)
+
                  local GObj = {}
                  function GObj:Toggle(t, def, cb)
                      local Fr = Instance.new("Frame", Grp); Fr.Size = UDim2.new(1,0,0,30); Fr.BackgroundTransparency=1
-                     local Tb = Instance.new("TextButton", Fr); Tb.Size = UDim2.new(0,24,0,24); Tb.Position = UDim2.new(1,-30,0,3); Tb.BackgroundColor3 = def and Themes.Accent or Color3.new(0.2,0.2,0.2)
-                     Instance.new("UICorner", Tb).CornerRadius = UDim.new(0,4)
+                     local Tb = Instance.new("TextButton", Fr); Tb.Size = UDim2.new(0,40,0,20); Tb.Position = UDim2.new(1,-50,0,5); Tb.BackgroundColor3 = def and Themes.Accent or Color3.new(0.2,0.2,0.2); Tb.Text=""
+                     Instance.new("UICorner", Tb).CornerRadius = UDim.new(1,0)
+                     local Circle = Instance.new("Frame", Tb); Circle.Size=UDim2.new(0,16,0,16); Circle.Position=def and UDim2.new(1,-18,0,2) or UDim2.new(0,2,0,2); Circle.BackgroundColor3=Color3.new(1,1,1); Instance.new("UICorner", Circle).CornerRadius=UDim.new(1,0)
                      
-                     local Lbl = Instance.new("TextLabel", Fr); Lbl.Text = t; Lbl.Size = UDim2.new(1,-40,1,0); Lbl.Position = UDim2.new(0,10,0,0); Lbl.TextColor3 = Color3.new(1,1,1); Lbl.BackgroundTransparency=1; Lbl.TextXAlignment = Enum.TextXAlignment.Left; Lbl.Font = Enum.Font.Gotham
+                     local Lbl = Instance.new("TextLabel", Fr); Lbl.Text = t; Lbl.Size = UDim2.new(1,-60,1,0); Lbl.Position = UDim2.new(0,0,0,0); Lbl.TextColor3 = Color3.new(1,1,1); Lbl.BackgroundTransparency=1; Lbl.TextXAlignment = Enum.TextXAlignment.Left; Lbl.Font = Enum.Font.Gotham
                      
-                     Tb.MouseButton1Click:Connect(function() def = not def; Tb.BackgroundColor3 = def and Themes.Accent or Color3.new(0.2,0.2,0.2); pcall(cb, def) end)
-                     return Tb -- Return toggle button for direct access if needed
+                     Tb.MouseButton1Click:Connect(function() 
+                         def = not def
+                         pcall(cb, def) 
+                         TweenService:Create(Tb, TweenInfo.new(0.3), {BackgroundColor3 = def and Themes.Accent or Color3.new(0.2,0.2,0.2)}):Play()
+                         TweenService:Create(Circle, TweenInfo.new(0.3), {Position = def and UDim2.new(1,-18,0,2) or UDim2.new(0,2,0,2)}):Play()
+                     end)
+                     return Tb 
                  end
                  function GObj:Slider(t, min, max, def, cb)
                      local Fr = Instance.new("Frame", Grp); Fr.Size = UDim2.new(1,0,0,50); Fr.BackgroundTransparency=1
-                     local Sl = Instance.new("TextButton", Fr); Sl.Size=UDim2.new(1,-20,0,10); Sl.Position=UDim2.new(0,10,0,30); Sl.BackgroundColor3=Color3.new(0.2,0.2,0.2); Sl.Text=""
+                     local Sl = Instance.new("TextButton", Fr); Sl.Size=UDim2.new(1,-20,0,10); Sl.Position=UDim2.new(0,0,0,30); Sl.BackgroundColor3=Color3.new(0.2,0.2,0.2); Sl.Text=""
                      Instance.new("UICorner", Sl).CornerRadius=UDim.new(1,0)
                      
                      local Fill = Instance.new("Frame", Sl); Fill.Size=UDim2.new((def-min)/(max-min),0,1,0); Fill.BackgroundColor3=Themes.Accent
                      Instance.new("UICorner", Fill).CornerRadius=UDim.new(1,0)
                      
-                     local Lbl = Instance.new("TextLabel", Fr); Lbl.Text = t .. ": " .. def; Lbl.Size = UDim2.new(1,-20,0,20); Lbl.Position = UDim2.new(0,10,0,5); Lbl.BackgroundTransparency=1; Lbl.TextColor3=Color3.new(1,1,1); Lbl.TextXAlignment=Enum.TextXAlignment.Left; Lbl.Font=Enum.Font.Gotham
+                     local Lbl = Instance.new("TextLabel", Fr); Lbl.Text = t .. ": " .. def; Lbl.Size = UDim2.new(1,-20,0,20); Lbl.Position = UDim2.new(0,0,0,5); Lbl.BackgroundTransparency=1; Lbl.TextColor3=Color3.new(1,1,1); Lbl.TextXAlignment=Enum.TextXAlignment.Left; Lbl.Font=Enum.Font.Gotham
                      
                      Sl.MouseButton1Down:Connect(function()
                          local m = game:GetService("Players").LocalPlayer:GetMouse()
                          local move = m.Move:Connect(function()
                              local p = math.clamp((m.X - Sl.AbsolutePosition.X)/Sl.AbsoluteSize.X,0,1)
                              local v = math.floor(min + (max-min)*p)
-                             Fill.Size = UDim2.new(p,0,1,0); Lbl.Text = t..": "..v; pcall(cb, v)
+                             TweenService:Create(Fill, TweenInfo.new(0.1), {Size = UDim2.new(p,0,1,0)}):Play()
+                             Lbl.Text = t..": "..v
+                             pcall(cb, v)
                          end)
                          game:GetService("UserInputService").InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then move:Disconnect() end end)
                      end)
                  end
                  function GObj:Bind(t, key, cb)
                      local Fr = Instance.new("Frame", Grp); Fr.Size = UDim2.new(1,0,0,30); Fr.BackgroundTransparency=1
-                     local Lbl = Instance.new("TextLabel", Fr); Lbl.Text = t; Lbl.Size = UDim2.new(1,-100,1,0); Lbl.Position = UDim2.new(0,10,0,0); Lbl.BackgroundTransparency=1; Lbl.TextColor3 = Color3.new(1,1,1); Lbl.TextXAlignment = Enum.TextXAlignment.Left; Lbl.Font = Enum.Font.Gotham
+                     local Lbl = Instance.new("TextLabel", Fr); Lbl.Text = t; Lbl.Size = UDim2.new(1,-100,1,0); Lbl.Position = UDim2.new(0,0,0,0); Lbl.BackgroundTransparency=1; Lbl.TextColor3 = Color3.new(1,1,1); Lbl.TextXAlignment = Enum.TextXAlignment.Left; Lbl.Font = Enum.Font.Gotham
                      
                      local B = Instance.new("TextButton", Fr); B.Text = key.Name; B.Size = UDim2.new(0,80,0,24); B.Position = UDim2.new(1,-90,0,3); B.BackgroundColor3 = Color3.new(0.2,0.2,0.2); B.TextColor3=Color3.new(1,1,1)
                      Instance.new("UICorner", B).CornerRadius = UDim.new(0,4)
@@ -434,13 +569,18 @@ local UI = (function()
                  function GObj:Button(t, cb)
                     local B = Instance.new("TextButton", Grp); B.Text = t; B.Size = UDim2.new(1,-20,0,30); B.BackgroundColor3 = Color3.fromRGB(40,40,45); B.TextColor3=Color3.new(1,1,1); B.Font=Enum.Font.Gotham
                     Instance.new("UICorner", B).CornerRadius = UDim.new(0,4)
-                    B.MouseButton1Click:Connect(cb)
+                    B.MouseButton1Click:Connect(function() 
+                        TweenService:Create(B, TweenInfo.new(0.1), {BackgroundColor3=Themes.Accent}):Play()
+                        task.wait(0.1)
+                        TweenService:Create(B, TweenInfo.new(0.3), {BackgroundColor3=Color3.fromRGB(40,40,45)}):Play()
+                        cb() 
+                    end)
                  end
                  return GObj
              end
              return TabObj
          end
-         return Window
+         return Window, Main
     end
     UI.VoidLib = VoidLib
     return UI
@@ -458,7 +598,14 @@ local MouseUnlocker = Utility.MouseUnlocker
 -- ==========================================
 -- UI SETUP & LOGIC WIRING
 -- ==========================================
-local Win = VoidLib:CreateWindow()
+local Win, MainFrame = VoidLib:CreateWindow()
+
+-- Global Toggle Logic (Right Shift)
+game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
+   if not gameProcessed and input.KeyCode == Enum.KeyCode.RightShift then
+       MainFrame.Visible = not MainFrame.Visible
+   end
+end)
 
 -- >>> TAB: COMBATE
 local CombatTab = Win:Tab("Combate")
