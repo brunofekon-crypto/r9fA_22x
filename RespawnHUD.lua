@@ -806,7 +806,11 @@ local BotCore = (function()
     local LocalPlayer = Players.LocalPlayer
 
     local currentTargetName = nil
-    local isEnabled = false
+    
+    -- State Flags
+    local isFollowEnabled = false
+    local isFlingEnabled = false
+    
     local loopConnection = nil
     local lastPathTime = 0
     local currentWaypoints = nil
@@ -927,18 +931,22 @@ local BotCore = (function()
     end
 
     local function UpdateBot()
-        if not isEnabled then return end
-
+        -- Loop runs if EITHER is enabled. logic inside handles details.
+        
         local myChar = LocalPlayer.Character
         if not myChar then return end
         local myRoot = getRoot(myChar)
         local myHum = getHumanoid(myChar)
         if not myRoot or not myHum then return end
 
+        ---------------------------------------------------
         -- [!] FLING MISSILE LOGIC (Attack Mode)
-        local attackTarget = nil
-        for name, _ in pairs(FlingTargets) do
-            local enemy = Players:FindFirstChild(name)
+        -- Only runs if Fling Mode is explicitly ENABLED
+        ---------------------------------------------------
+        if isFlingEnabled then
+            local attackTarget = nil
+            for name, _ in pairs(FlingTargets) do
+                local enemy = Players:FindFirstChild(name)
             if enemy and enemy.Character then
                 local eRoot = getRoot(enemy.Character)
                 if eRoot then
@@ -951,20 +959,22 @@ local BotCore = (function()
             end
         end
 
-        if attackTarget then
-            if myHum.Sit then myHum.Sit = false end
-            for _, p in pairs(myChar:GetChildren()) do
-                if p:IsA("BasePart") then p.CanCollide = false end
+            if attackTarget then
+                if myHum.Sit then myHum.Sit = false end
+                for _, p in pairs(myChar:GetChildren()) do
+                    if p:IsA("BasePart") then p.CanCollide = false end
+                end
+                myRoot.CFrame = attackTarget.CFrame 
+                myRoot.AssemblyAngularVelocity = Vector3.new(90000, 90000, 90000) 
+                myRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                currentWaypoints = nil
+                return
             end
-            myRoot.CFrame = attackTarget.CFrame 
-            myRoot.AssemblyAngularVelocity = Vector3.new(90000, 90000, 90000) 
-            myRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-            currentWaypoints = nil
-            return
-        else
-            if myRoot.AssemblyAngularVelocity.Magnitude > 1000 then
-                 myRoot.AssemblyAngularVelocity = Vector3.new(0,0,0)
-            end
+        end -- End of isFlingEnabled check
+
+        -- Reset Physics if logic fell through
+        if myRoot.AssemblyAngularVelocity.Magnitude > 1000 then
+                myRoot.AssemblyAngularVelocity = Vector3.new(0,0,0)
         end
 
         if not currentTargetName or currentTargetName == "Nenhum" then return end
@@ -1146,10 +1156,8 @@ local BotCore = (function()
         end
     end
 
-    function BotCore:SetEnabled(state)
-        warn("[BotDebug] SetEnabled called with state: " .. tostring(state))
-        isEnabled = state
-        if state then
+    local function CheckLoop()
+        if isFollowEnabled or isFlingEnabled then
             if not loopConnection then
                 warn("[BotDebug] Starting loop...")
                 loopConnection = RunService.Heartbeat:Connect(UpdateBot)
@@ -1165,6 +1173,24 @@ local BotCore = (function()
                  getHumanoid(char):MoveTo(char.HumanoidRootPart.Position)
             end
         end
+    end
+
+    function BotCore:SetFollowEnabled(state)
+        warn("[BotDebug] Follow Enabled: " .. tostring(state))
+        isFollowEnabled = state
+        CheckLoop()
+    end
+
+    function BotCore:SetFlingEnabled(state)
+        warn("[BotDebug] Fling Enabled: " .. tostring(state))
+        isFlingEnabled = state
+        CheckLoop()
+    end
+    
+    function BotCore:SetEnabled(state)
+        -- Redirect legacy calls to Follow logic
+        -- This ensures "Seguir Player" behavior is preserved if called via old methods
+        self:SetFollowEnabled(state)
     end
 
     return BotCore
@@ -2437,14 +2463,7 @@ end)
 -- >>> TAB: PRE-CONFIGS (BotMe)
 local BotMe = Win:Tab("BotMe")
 
--- [NEW] BOTS GROUP
-local BotsGroup = BotMe:Group("Bots")
-
-BotsGroup:Toggle("Seguir Player", false, function(v)
-    BotCore:SetEnabled(v)
-end)
-
--- [EXISTING] CONFIG GROUP
+-- 1. GROUP: GERENCIAMENTO (First)
 local BotGroup = BotMe:Group("Gerenciamento de Bot")
 
 local function GetPlayersList()
@@ -2457,7 +2476,7 @@ local function GetPlayersList()
     return list
 end
 
-local botTargetDropdown = BotGroup:Dropdown("Alvo (Target)", {"Nenhum"}, "Nenhum", function(v)
+local botTargetDropdown = BotGroup:Dropdown("Alvo (Seguir)", {"Nenhum"}, "Nenhum", function(v)
     warn("[UI] Dropdown selected: " .. tostring(v))
     BotCore:SetTarget(v)
 end)
@@ -2486,6 +2505,19 @@ BotGroup:InteractiveList("Alvo(s) Fling", GetPlayersList, function(name)
 end, function(name)
     BotCore:RemoveFlingTarget(name)
 end)
+
+
+-- 2. GROUP: BOTS (Second)
+local BotsGroup = BotMe:Group("Bots")
+
+BotsGroup:Toggle("Seguir Player", false, function(v)
+    BotCore:SetFollowEnabled(v)
+end)
+
+BotsGroup:Toggle("Missel player(fling)", false, function(v)
+    BotCore:SetFlingEnabled(v)
+end)
+
 
 -- >>> TAB: CONFIGURAÇÕES
 local Settings = Win:Tab("Configs")
