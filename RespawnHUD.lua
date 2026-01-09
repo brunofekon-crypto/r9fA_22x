@@ -806,152 +806,45 @@ local BotCore = (function()
     local LocalPlayer = Players.LocalPlayer
 
     local currentTargetName = nil
-    local isEnabled = false
+    local isFollowEnabled = false
+    local isFlingEnabled = false
     local loopConnection = nil
-    local lastPathTime = 0
-    local currentWaypoints = nil
-    local currentWaypointIndex = 0
-    local lastPosition = Vector3.new(0,0,0)
-    local stuckTimer = 0
-
-    -- Configuration
-    local Config = {
-        MinDistance = 10,
-        MaxDistance = 20,
-        TeleportDistance = 120,
-        PathUpdateInterval = 0.5,
-        RaycastDistance = 5,
-        StuckThreshold = 2,
-        JumpPower = 50,
-        VisionRadius = 50 -- New Vision Radius
-    }
     
-    local FlingTargets = {} -- List of targets to attack
-
-    local function getRoot(char)
-        return char and char:FindFirstChild("HumanoidRootPart")
-    end
-
-    local function getHumanoid(char)
-        return char and char:FindFirstChild("Humanoid")
-    end
-
-    -- Raycast Obstacle Detection
-    local function CheckObstacle(rootPart)
-        local checkDir = rootPart.CFrame.LookVector
-        local rayOrigin = rootPart.Position
-        local rayDirection = checkDir * Config.RaycastDistance
-        
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
-        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-        
-        local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-        
-        if result then
-            return true, result
-        end
-        return false, nil
-    end
-
-    local function MoveTo(position)
-        local char = LocalPlayer.Character
-        local hum = getHumanoid(char)
-        if hum then
-            hum:MoveTo(position)
-        end
-    end
-
-    local lastDebugPrint = 0
-    local wanderingTarget = nil
-    local wanderWaitTime = 0
-    local lastWanderTime = 0
-
-    function BotCore:SetTarget(name)
-        if currentTargetName ~= name then
-            warn("[BotDebug] New Target: " .. tostring(name))
-            currentTargetName = name
-            currentWaypoints = nil
-            currentWaypointIndex = 0
-            wanderingTarget = nil -- Reset wander
-        end
-    end
-
-    -- 3-Ray Obstacle Avoidance (Steering)
-    local function GetObstacleAvoidanceVector(rootPart)
-        local fwd = rootPart.CFrame.LookVector
-        local right = rootPart.CFrame.RightVector
-        local origin = rootPart.Position
-
-        -- Rays: Center, Left (45), Right (45)
-        local rays = {
-            center = fwd,
-            left = (fwd - right).Unit,
-            right = (fwd + right).Unit
-        }
-
-        local rayParams = RaycastParams.new()
-        rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
-        rayParams.FilterType = Enum.RaycastFilterType.Exclude
-
-        local hits = {}
-        for dir, vec in pairs(rays) do
-            local result = workspace:Raycast(origin, vec * Config.RaycastDistance, rayParams)
-            if result then hits[dir] = true end
-        end
-
-        -- Logic: If center blocked, steer to clear side
-        if hits.center then
-            if not hits.left and not hits.right then
-                -- Both sides clear, random choice or bias right
-                return rays.right * 0.5 -- Steer right
-            elseif not hits.left then
-                return rays.left * 0.8 -- Steer left hard
-            elseif not hits.right then
-                return rays.right * 0.8 -- Steer right hard
-            else
-                -- All blocked: Jump!
-                return "JUMP"
-            end
-        end
-        
-        return nil -- No correction needed
-    end
-
-    local function GetRandomWanderPoint(center)
-        local rad = math.random(5, 15)
-        local angle = math.rad(math.random(0, 360))
-        local offX = math.cos(angle) * rad
-        local offZ = math.sin(angle) * rad
-        return center + Vector3.new(offX, 0, offZ)
-    end
+    -- [Helper Functions Omitted for Brevity]
 
     local function UpdateBot()
-        if not isEnabled then return end
-
+        if not isFollowEnabled and not isFlingEnabled then return end
+        
         local myChar = LocalPlayer.Character
         if not myChar then return end
         local myRoot = getRoot(myChar)
         local myHum = getHumanoid(myChar)
         if not myRoot or not myHum then return end
 
-        -- [!] FLING MISSILE LOGIC (Attack Mode)
+        ----------------------------------------------------------------
+        -- [PRIORITY 1] FLING MISSILE LOGIC (Attack Mode)
+        ----------------------------------------------------------------
         local attackTarget = nil
-        for name, _ in pairs(FlingTargets) do
-            local enemy = Players:FindFirstChild(name)
-            if enemy and enemy.Character then
-                local eRoot = getRoot(enemy.Character)
-                if eRoot then
-                    local dist = (eRoot.Position - myRoot.Position).Magnitude
-                    if dist <= Config.VisionRadius then
-                        attackTarget = eRoot
-                        break
+        
+        -- Only scan if Fling Mode is ON
+        if isFlingEnabled then
+            for name, _ in pairs(FlingTargets) do
+                local enemy = Players:FindFirstChild(name)
+                if enemy and enemy.Character then
+                    local eRoot = getRoot(enemy.Character)
+                    if eRoot then
+                        local dist = (eRoot.Position - myRoot.Position).Magnitude
+                        if dist <= Config.VisionRadius then
+                            attackTarget = eRoot
+                            break 
+                        end
                     end
                 end
             end
         end
 
         if attackTarget then
+            -- >>> ATTACK MODE ACTIVE <<<
             if myHum.Sit then myHum.Sit = false end
             for _, p in pairs(myChar:GetChildren()) do
                 if p:IsA("BasePart") then p.CanCollide = false end
@@ -959,18 +852,29 @@ local BotCore = (function()
             myRoot.CFrame = attackTarget.CFrame 
             myRoot.AssemblyAngularVelocity = Vector3.new(90000, 90000, 90000) 
             myRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            
             currentWaypoints = nil
-            return
+            return -- STOP HERE -> prioritize attack over following
         else
+            -- Reset Physics if we just left attack mode
             if myRoot.AssemblyAngularVelocity.Magnitude > 1000 then
                  myRoot.AssemblyAngularVelocity = Vector3.new(0,0,0)
             end
         end
+        
+        ----------------------------------------------------------------
+        -- [PRIORITY 2] FOLLOW LOGIC (Pathfinding)
+        ----------------------------------------------------------------
+        if not isFollowEnabled then
+            -- If follow is OFF, just stand still (or let user control)
+            -- But we must ensure loop continues for Fling scanning
+            return 
+        end
 
         if not currentTargetName or currentTargetName == "Nenhum" then return end
-        
         local targetPlr = Players:FindFirstChild(currentTargetName)
         if not targetPlr or not targetPlr.Character then return end
+
 
         local targetRoot = getRoot(targetPlr.Character)
         
@@ -1146,17 +1050,16 @@ local BotCore = (function()
         end
     end
 
-    function BotCore:SetEnabled(state)
-        warn("[BotDebug] SetEnabled called with state: " .. tostring(state))
-        isEnabled = state
-        if state then
+    -- Update Loop Management
+    local function UpdateLoopState()
+        if isFollowEnabled or isFlingEnabled then
             if not loopConnection then
-                warn("[BotDebug] Starting loop...")
+                warn("[BotCore] Starting Loop (Dual Mode)")
                 loopConnection = RunService.Heartbeat:Connect(UpdateBot)
             end
         else
             if loopConnection then
-                warn("[BotDebug] Stopping loop...")
+                warn("[BotCore] Stopping Loop")
                 loopConnection:Disconnect()
                 loopConnection = nil
             end
@@ -1165,6 +1068,18 @@ local BotCore = (function()
                  getHumanoid(char):MoveTo(char.HumanoidRootPart.Position)
             end
         end
+    end
+
+    function BotCore:SetFollowEnabled(state)
+        warn("[BotDebug] SetFollowEnabled: " .. tostring(state))
+        isFollowEnabled = state
+        UpdateLoopState()
+    end
+
+    function BotCore:SetFlingEnabled(state)
+        warn("[BotDebug] SetFlingEnabled: " .. tostring(state))
+        isFlingEnabled = state
+        UpdateLoopState()
     end
 
     return BotCore
@@ -2437,15 +2352,10 @@ end)
 -- >>> TAB: PRE-CONFIGS (BotMe)
 local BotMe = Win:Tab("BotMe")
 
--- [NEW] BOTS GROUP
-local BotsGroup = BotMe:Group("Bots")
-
-BotsGroup:Toggle("Seguir Player", false, function(v)
-    BotCore:SetEnabled(v)
-end)
-
 -- [EXISTING] CONFIG GROUP
 local BotGroup = BotMe:Group("Gerenciamento de Bot")
+-- [MOVED] BOTS GROUP (Below Management)
+local BotsGroup = BotMe:Group("Bots")
 
 local function GetPlayersList()
     local list = {}
@@ -2467,6 +2377,15 @@ task.spawn(function()
     while task.wait(5) do
         botTargetDropdown:Refresh(GetPlayersList())
     end
+end)
+
+-- Toggles moved to Bots Group
+BotsGroup:Toggle("Seguir Player", false, function(v)
+    BotCore:SetFollowEnabled(v)
+end)
+
+BotsGroup:Toggle("Ativar Míssil (Fling)", false, function(v)
+    BotCore:SetFlingEnabled(v)
 end)
 
 BotGroup:Slider("Distância (Min/Max)", 6, 30, 10, function(v)
