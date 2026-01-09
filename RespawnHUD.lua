@@ -1067,7 +1067,7 @@ local BotCore = (function()
              
              -- Noclip & Float
              if myHum.Sit then myHum.Sit = false end
-             for _, p in pairs(myChar:GetChildren()) do if p:IsA("BasePart") then p.CanCollide = false end }
+             for _, p in pairs(myChar:GetChildren()) do if p:IsA("BasePart") then p.CanCollide = false end end
              myHum.PlatformStand = true
              
              local dist = (myRoot.Position - tRoot.Position).Magnitude
@@ -1138,7 +1138,7 @@ local BotCore = (function()
                  warn("[BotAttack] Returned to Base.")
              else
                  -- Fly Back
-                 for _, p in pairs(myChar:GetChildren()) do if p:IsA("BasePart") then p.CanCollide = false end }
+                 for _, p in pairs(myChar:GetChildren()) do if p:IsA("BasePart") then p.CanCollide = false end end
                  myHum.PlatformStand = true
                  local dir = (ownerRoot.Position - myRoot.Position).Unit
                  myRoot.AssemblyLinearVelocity = dir * 60
