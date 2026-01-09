@@ -940,6 +940,34 @@ local BotCore = (function()
         return center + Vector3.new(offX, 0, offZ)
     end
 
+    local function TeleportReturn()
+         local targetPlr = Players:FindFirstChild(currentTargetName)
+         local ownerRoot = nil
+         if targetPlr and targetPlr.Character then ownerRoot = getRoot(targetPlr.Character) end
+         
+         if ownerRoot then
+             local myChar = LocalPlayer.Character
+             if myChar and myChar:FindFirstChild("HumanoidRootPart") then
+                 myChar.HumanoidRootPart.CFrame = ownerRoot.CFrame * CFrame.new(0, 0, 5)
+                 myChar.HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+                 myChar.HumanoidRootPart.AssemblyAngularVelocity = Vector3.zero
+             end
+         end
+         
+         currentFlingState = FlingState.IDLE
+         activeFlingTarget = nil
+         
+         -- Reset Physics
+         local myChar = LocalPlayer.Character
+         if myChar then
+             local hum = getHumanoid(myChar)
+             if hum then hum.PlatformStand = false end
+             for _, p in pairs(myChar:GetChildren()) do
+                 if p:IsA("BasePart") then p.CanCollide = true end
+             end
+         end
+    end
+
     local function UpdateBot()
         local myChar = LocalPlayer.Character
         if not myChar then return end
@@ -1092,46 +1120,62 @@ local BotCore = (function()
              end
              local tRoot = getRoot(activeFlingTarget.Character)
              local tHum = getHumanoid(activeFlingTarget.Character)
+             if not tRoot then currentFlingState = FlingState.RETURNING return end
 
-             -- Lock Position & Spin
-             myRoot.CFrame = tRoot.CFrame
-             myRoot.AssemblyAngularVelocity = Vector3.new(200000, 200000, 200000) -- ULTRA SPIN
+             -- [!] ENABLE COLLISIONS FOR FLING TO WORK
+             -- We need to be physical to hit them.
+             for _, p in pairs(myChar:GetChildren()) do
+                 if p:IsA("BasePart") then p.CanCollide = true end
+             end
+             
+             -- Lock Position & Spin with Jitter (to wake physics)
+             -- We stay inside them to force collision resolution (The Fling)
+             myRoot.CFrame = tRoot.CFrame * CFrame.new(math.random()-0.5, math.random()-0.5, math.random()-0.5)
+             myRoot.AssemblyAngularVelocity = Vector3.new(200000, 200000, 200000) 
              myRoot.AssemblyLinearVelocity = Vector3.zero
              
-             local flingDuration = tick() - flingStartTime
+             -- --- CRITICAL SAFETY CHECKS (Run EVERY frame) ---
              
-             -- [1] Minimum Spin Duration (1.5s)
-             -- Don't check anything for the first 1.5s, just SPIN.
-             if flingDuration < 1.5 then
+             -- 1. Void Safety: If WE or THEY are falling too low, ABORT.
+             -- Use -50 or relative to LocalPlayer if we could, but -50 is a good absolute floor for most maps.
+             if myRoot.Position.Y < -50 or tRoot.Position.Y < -50 then
+                 warn("[BotSafety] Void Detected! Emergency Return.")
+                 TeleportReturn() -- Helper function call (we'll define logic inline since we can't extract easily here)
                  return
              end
-             
-             -- Validation Checks
-             local targetMovedDist = (tRoot.Position - lastTargetPos).Magnitude
-             local isVoid = myRoot.Position.Y < -50
-             local isDead = tHum and tHum.Health <= 0
-             local isFlung = targetMovedDist > 100 -- Now checks TOTAL displacement from start
-             local isTimeout = flingDuration > 5
 
-             if isVoid or isDead or isFlung or isTimeout then
-                 warn("[BotAttack] Target Eliminated or Safety Trigger! (Moved: " .. math.floor(targetMovedDist) .. "s)")
-                 
-                 -- TELEPORT RETURN
-                 local targetPlr = Players:FindFirstChild(currentTargetName)
-                 local ownerRoot = nil
-                 if targetPlr and targetPlr.Character then ownerRoot = getRoot(targetPlr.Character) end
-                 
-                 if ownerRoot then
-                     myRoot.CFrame = ownerRoot.CFrame * CFrame.new(0, 0, 5)
-                 end
-                 
-                 currentFlingState = FlingState.IDLE
-                 ResetPhysics()
-                 myHum.PlatformStand = false
+             -- 2. Target Death
+             if tHum and tHum.Health <= 0 then
+                 warn("[BotAttack] Target Eliminated (Dead). Returning.")
+                 TeleportReturn()
                  return
              end
+
+             -- 3. Success Detection (Absurd Velocity / Distance)
+             local targetMovedDist = (tRoot.Position - lastTargetPos).Magnitude
+             local targetVelocity = tRoot.AssemblyLinearVelocity.Magnitude
              
-             -- REMOVED: lastTargetPos = tRoot.Position (Do no update this, we want total distance!)
+             -- Determine if Fling was successful
+             local isFar = targetMovedDist > 100
+             local isFast = targetVelocity > 1000 -- Absurd velocity checking
+             local isGone = (tRoot.Position - myRoot.Position).Magnitude > 50 -- They were yeeted away from us
+
+             if isFar or (isFast and isGone) then
+                  warn("[BotAttack] Fling Successful! (Dist: " .. math.floor(targetMovedDist) .. ", Vel: " .. math.floor(targetVelocity) .. ")")
+                  TeleportReturn()
+                  return
+             end
+             
+             -- [!] MINIMUM DURATION for persistence
+             -- If we haven't succeeded yet, stick around for at least 1.0s to ensure we hit them.
+             -- BUT: Void/Death checks (above) override this.
+             if (tick() - flingStartTime) > 5 then
+                 warn("[BotAttack] Timeout (5s). Give up.")
+                 TeleportReturn()
+             end
+             
+             -- Keep tracking total displacement
+             -- lastTargetPos is NOT updated here, to measure from START of fling.
 
         -- [STATE: RETURNING] Fly back (Fallback / Deprecated by TP)
         elseif currentFlingState == FlingState.RETURNING then
