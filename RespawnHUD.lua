@@ -1128,86 +1128,76 @@ local BotCore = (function()
                  if p:IsA("BasePart") then p.CanCollide = true end
              end
              
-             -- [!] FORCE SIMULATION RADIUS (Network Ownership Trick)
-             -- Try to claim physics ownership of the area
+             -- [!] FORCE SIMULATION RADIUS (Network Ownership)
              pcall(function()
                  settings().Physics.AllowSleep = false
                  sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
                  sethiddenproperty(LocalPlayer, "MaxSimulationRadius", math.huge)
              end)
              
-             -- [!] ENABLE COLLISIONS FOR FLING TO WORK
+             -- [!] ENABLE COLLISIONS
              for _, p in pairs(myChar:GetChildren()) do
-                 if p:IsA("BasePart") then 
-                     p.CanCollide = true 
-                     p.Velocity = Vector3.new(0,0,0) -- Reset standard velocity, rely on Assembly
+                 if p:IsA("BasePart") then p.CanCollide = true end
+             end
+             
+             -- --- CATCH & RELEASE MECH ---
+             local targetVelocity = tRoot.AssemblyLinearVelocity.Magnitude
+             local targetMovedDist = (tRoot.Position - lastTargetPos).Magnitude
+             local distFromMe = (tRoot.Position - myRoot.Position).Magnitude
+             
+             -- [PHASE 1: RELEASE & WATCH]
+             -- If they are moving fast (>300), let go and watch them fly.
+             if targetVelocity > 300 then
+                 -- Hover in place
+                 myRoot.AssemblyLinearVelocity = Vector3.zero
+                 myRoot.AssemblyAngularVelocity = Vector3.zero
+                 -- Don't lock CFrame. Just wait.
+                 
+                 -- [SUCCESS CHECK]
+                 -- If they are far away (>100) AND moving fast (or gone), we win.
+                 if targetMovedDist > 100 or distFromMe > 80 then
+                      warn("[BotAttack] Fling Successful! (Yeeted " .. math.floor(targetMovedDist) .. " studs)")
+                      TeleportReturn()
+                      return
                  end
-             end
-             
-             -- [PHYSICS OVERHAUL: THRASH MODE]
-             -- Instead of static jitter, we cycle positions to FORCE collision resolution.
-             -- 1. UP (Lift)
-             -- 2. DOWN (Smash)
-             -- 3. INSIDE (Explode)
-             
-             local phase = math.floor(tick() * 10) % 3 -- Switch 10 times a second
-             local offset = CFrame.new(0, 0, 0)
-             
-             if phase == 0 then
-                 offset = CFrame.new(0, -2, 0) -- Under feet (LIFT)
-             elseif phase == 1 then
-                 offset = CFrame.new(0, 2, 0) -- Over head (SMASH)
+                 
              else
-                 offset = CFrame.new(0, 0, 0) -- Inside (Should eject)
+                 -- [PHASE 2: CATCH & SPIN]
+                 -- They are slow. Grab them.
+                 
+                 -- Physics: Skyrocket Lift + Hyper Spin
+                 myRoot.AssemblyAngularVelocity = Vector3.new(0, 100000, 0) 
+                 myRoot.AssemblyLinearVelocity = Vector3.new(0, 5000, 0)
+                 
+                 -- Lock Position (Smooth Jitter)
+                 myRoot.CFrame = tRoot.CFrame * CFrame.Angles(0, math.rad(90*tick()), 0) * CFrame.new(0, 0, 0)
              end
-             
-             myRoot.AssemblyAngularVelocity = Vector3.new(0, 100000, 0) -- Pure Spinning
-             myRoot.AssemblyLinearVelocity = Vector3.new(0, 10000, 0) -- Skyrocket Up
-             
-             -- Apply Thrash
-             local rot = CFrame.Angles(0, math.rad(90*tick()), 0)
-             myRoot.CFrame = tRoot.CFrame * rot * offset
-             
-             local flingDuration = tick() - flingStartTime
 
-             -- --- SAFETY & VALIDATION ---
+             -- --- SAFETY CHECK ---
+             local flingDuration = tick() - flingStartTime
              
-             -- [GRACE PERIOD]
              if flingDuration > 0.5 then
-             
-                 -- 1. Void Safety (RELATIVE CHECK)
+                 -- Void Check (Relative)
                  local currentY = myRoot.Position.Y
                  local fallenDist = (flingStartHeight or currentY) - currentY
                  
                  if fallenDist > 50 then
-                     warn("[BotSafety] Void/Fall Detected! (Fell " .. math.floor(fallenDist) .. " studs)")
+                     warn("[BotSafety] Void/Fall Detected! Returning.")
                      TeleportReturn()
                      return
                  end
 
-                 -- 2. Target Death
+                 -- Death Check
                  if tHum and tHum.Health <= 0 then
-                     warn("[BotAttack] Target Eliminated (Dead). Returning.")
+                     warn("[BotAttack] Target Eliminated. Returning.")
                      TeleportReturn()
                      return
-                 end
-                 
-                 -- 3. Success Detection
-                 local targetMovedDist = (tRoot.Position - lastTargetPos).Magnitude
-                 
-                 local isFar = targetMovedDist > 100
-                 local isGone = (tRoot.Position - myRoot.Position).Magnitude > 50 
-
-                 if isFar or isGone then
-                      warn("[BotAttack] Fling Successful! (Dist: " .. math.floor(targetMovedDist) .. ")")
-                      TeleportReturn()
-                      return
                  end
              end
              
-             -- [!] TIMEOUT
-             if flingDuration > 5 then
-                 warn("[BotAttack] Timeout (5s). Give up.")
+             -- [TIMEOUT]
+             if flingDuration > 8 then -- Give it more time (8s) to land a hit
+                 warn("[BotAttack] Timeout (8s). Returning.")
                  TeleportReturn()
              end
              
