@@ -822,8 +822,11 @@ local BotCore = (function()
         PathUpdateInterval = 0.5,
         RaycastDistance = 5,
         StuckThreshold = 2,
-        JumpPower = 50
+        JumpPower = 50,
+        VisionRadius = 50 -- New Vision Radius
     }
+    
+    local FlingTargets = {} -- List of targets to attack
 
     local function getRoot(char)
         return char and char:FindFirstChild("HumanoidRootPart")
@@ -924,18 +927,54 @@ local BotCore = (function()
     end
 
     local function UpdateBot()
-        if not isEnabled or not currentTargetName or currentTargetName == "Nenhum" then return end
-        
-        local targetPlr = Players:FindFirstChild(currentTargetName)
-        if not targetPlr or not targetPlr.Character then return end
+        if not isEnabled then return end
 
         local myChar = LocalPlayer.Character
         if not myChar then return end
         local myRoot = getRoot(myChar)
-        local targetRoot = getRoot(targetPlr.Character)
         local myHum = getHumanoid(myChar)
+        if not myRoot or not myHum then return end
+
+        -- [!] FLING MISSILE LOGIC (Attack Mode)
+        local attackTarget = nil
+        for name, _ in pairs(FlingTargets) do
+            local enemy = Players:FindFirstChild(name)
+            if enemy and enemy.Character then
+                local eRoot = getRoot(enemy.Character)
+                if eRoot then
+                    local dist = (eRoot.Position - myRoot.Position).Magnitude
+                    if dist <= Config.VisionRadius then
+                        attackTarget = eRoot
+                        break
+                    end
+                end
+            end
+        end
+
+        if attackTarget then
+            if myHum.Sit then myHum.Sit = false end
+            for _, p in pairs(myChar:GetChildren()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+            end
+            myRoot.CFrame = attackTarget.CFrame 
+            myRoot.AssemblyAngularVelocity = Vector3.new(90000, 90000, 90000) 
+            myRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            currentWaypoints = nil
+            return
+        else
+            if myRoot.AssemblyAngularVelocity.Magnitude > 1000 then
+                 myRoot.AssemblyAngularVelocity = Vector3.new(0,0,0)
+            end
+        end
+
+        if not currentTargetName or currentTargetName == "Nenhum" then return end
         
-        if not myRoot or not targetRoot or not myHum then return end
+        local targetPlr = Players:FindFirstChild(currentTargetName)
+        if not targetPlr or not targetPlr.Character then return end
+
+        local targetRoot = getRoot(targetPlr.Character)
+        
+        if not targetRoot then return end
 
         local dist = (myRoot.Position - targetRoot.Position).Magnitude
         
@@ -1064,6 +1103,23 @@ local BotCore = (function()
     end
 
 
+
+    function BotCore:SetVisionRadius(rad)
+        Config.VisionRadius = rad
+        warn("[BotConfig] Vision Radius: " .. rad)
+    end
+    
+    function BotCore:AddFlingTarget(name)
+        FlingTargets[name] = true
+        warn("[BotFling] Added Target: " .. name)
+    end
+    
+    function BotCore:RemoveFlingTarget(name)
+        FlingTargets[name] = nil
+        warn("[BotFling] Removed Target: " .. name)
+    end
+
+    function BotCore:GetFlingTargets() return FlingTargets end
 
     function BotCore:SetDistances(min, max)
         Config.MinDistance = min
@@ -2412,8 +2468,18 @@ BotGroup:Slider("Distância (Min/Max)", 6, 30, 10, function(v)
     BotCore:SetDistances(v, v+5)
 end, function(v) return v .. "/" .. (v+5) end)
 
-BotGroup:Slider("Teleporte (Max Dist)", 35, 500, 120, function(v)
+BotGroup:Slider("Teleporte (Max Dist)", 30, 500, 120, function(v)
     BotCore:SetTeleportDistance(v)
+end)
+
+BotGroup:Slider("Raio de Visão (Ataque)", 10, 500, 50, function(v)
+    BotCore:SetVisionRadius(v)
+end)
+
+BotGroup:InteractiveList("Alvo(s) Fling (Add Nome)", function(text)
+    BotCore:AddFlingTarget(text)
+end, function(text)
+    BotCore:RemoveFlingTarget(text)
 end)
 
 -- >>> TAB: CONFIGURAÇÕES
