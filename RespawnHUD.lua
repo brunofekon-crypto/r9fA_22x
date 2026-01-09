@@ -1098,17 +1098,25 @@ local BotCore = (function()
              myRoot.AssemblyAngularVelocity = Vector3.new(200000, 200000, 200000) -- ULTRA SPIN
              myRoot.AssemblyLinearVelocity = Vector3.zero
              
+             local flingDuration = tick() - flingStartTime
+             
+             -- [1] Minimum Spin Duration (1.5s)
+             -- Don't check anything for the first 1.5s, just SPIN.
+             if flingDuration < 1.5 then
+                 return
+             end
+             
              -- Validation Checks
              local targetMovedDist = (tRoot.Position - lastTargetPos).Magnitude
              local isVoid = myRoot.Position.Y < -50
              local isDead = tHum and tHum.Health <= 0
-             local isFlung = targetMovedDist > 100
-             local isTimeout = (tick() - flingStartTime) > 5
+             local isFlung = targetMovedDist > 100 -- Now checks TOTAL displacement from start
+             local isTimeout = flingDuration > 5
 
              if isVoid or isDead or isFlung or isTimeout then
-                 warn("[BotAttack] Target Neutralized or Void Safety! TP Returning.")
+                 warn("[BotAttack] Target Eliminated or Safety Trigger! (Moved: " .. math.floor(targetMovedDist) .. "s)")
                  
-                 -- TELEPORT RETURN (No Fly Back)
+                 -- TELEPORT RETURN
                  local targetPlr = Players:FindFirstChild(currentTargetName)
                  local ownerRoot = nil
                  if targetPlr and targetPlr.Character then ownerRoot = getRoot(targetPlr.Character) end
@@ -1123,7 +1131,7 @@ local BotCore = (function()
                  return
              end
              
-             lastTargetPos = tRoot.Position -- Update pos to track movement
+             -- REMOVED: lastTargetPos = tRoot.Position (Do no update this, we want total distance!)
 
         -- [STATE: RETURNING] Fly back (Fallback / Deprecated by TP)
         elseif currentFlingState == FlingState.RETURNING then
