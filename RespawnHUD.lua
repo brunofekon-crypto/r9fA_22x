@@ -1084,7 +1084,7 @@ local BotCore = (function()
                 myHum:MoveTo(wanderingTarget)
             end
 
-        -- [STATE: APPROACH] Flying to Target
+    -- [STATE: APPROACH] Flying to Target
         elseif currentFlingState == FlingState.APPROACH then
              if not activeFlingTarget or not activeFlingTarget.Character then
                  currentFlingState = FlingState.RETURNING
@@ -1105,6 +1105,7 @@ local BotCore = (function()
                  currentFlingState = FlingState.FLINGING
                  lastTargetPos = tRoot.Position
                  flingStartTime = tick()
+                 flingStartHeight = myRoot.Position.Y -- CAPTURE START HEIGHT
              else
                  -- Fly towards
                  local dir = (tRoot.Position - myRoot.Position).Unit
@@ -1123,24 +1124,26 @@ local BotCore = (function()
              if not tRoot then currentFlingState = FlingState.RETURNING return end
 
              -- [!] ENABLE COLLISIONS FOR FLING TO WORK
-             -- We need to be physical to hit them.
              for _, p in pairs(myChar:GetChildren()) do
                  if p:IsA("BasePart") then p.CanCollide = true end
              end
              
-             -- Lock Position & Spin with Jitter (to wake physics)
-             -- We stay inside them to force collision resolution (The Fling)
+             -- Lock Position & Spin with Jitter
              myRoot.CFrame = tRoot.CFrame * CFrame.new(math.random()-0.5, math.random()-0.5, math.random()-0.5)
              myRoot.AssemblyAngularVelocity = Vector3.new(200000, 200000, 200000) 
              myRoot.AssemblyLinearVelocity = Vector3.zero
              
-             -- --- CRITICAL SAFETY CHECKS (Run EVERY frame) ---
+             -- --- CRITICAL SAFETY CHECKS ---
              
-             -- 1. Void Safety: If WE or THEY are falling too low, ABORT.
-             -- Use -50 or relative to LocalPlayer if we could, but -50 is a good absolute floor for most maps.
-             if myRoot.Position.Y < -50 or tRoot.Position.Y < -50 then
-                 warn("[BotSafety] Void Detected! Emergency Return.")
-                 TeleportReturn() -- Helper function call (we'll define logic inline since we can't extract easily here)
+             -- 1. Void Safety (RELATIVE CHECK)
+             -- Only trigger if we have fallen more than 50 studs from where we started the attack.
+             -- This fixes issues on low-altitude maps.
+             local currentY = myRoot.Position.Y
+             local fallenDist = (flingStartHeight or currentY) - currentY
+             
+             if fallenDist > 50 then
+                 warn("[BotSafety] Void/Fall Detected! (Fell " .. math.floor(fallenDist) .. " studs)")
+                 TeleportReturn()
                  return
              end
 
@@ -1151,14 +1154,13 @@ local BotCore = (function()
                  return
              end
 
-             -- 3. Success Detection (Absurd Velocity / Distance)
+             -- 3. Success Detection
              local targetMovedDist = (tRoot.Position - lastTargetPos).Magnitude
              local targetVelocity = tRoot.AssemblyLinearVelocity.Magnitude
              
-             -- Determine if Fling was successful
              local isFar = targetMovedDist > 100
-             local isFast = targetVelocity > 1000 -- Absurd velocity checking
-             local isGone = (tRoot.Position - myRoot.Position).Magnitude > 50 -- They were yeeted away from us
+             local isFast = targetVelocity > 1000 
+             local isGone = (tRoot.Position - myRoot.Position).Magnitude > 50 
 
              if isFar or (isFast and isGone) then
                   warn("[BotAttack] Fling Successful! (Dist: " .. math.floor(targetMovedDist) .. ", Vel: " .. math.floor(targetVelocity) .. ")")
@@ -1166,9 +1168,7 @@ local BotCore = (function()
                   return
              end
              
-             -- [!] MINIMUM DURATION for persistence
-             -- If we haven't succeeded yet, stick around for at least 1.0s to ensure we hit them.
-             -- BUT: Void/Death checks (above) override this.
+             -- [!] TIMEOUT
              if (tick() - flingStartTime) > 5 then
                  warn("[BotAttack] Timeout (5s). Give up.")
                  TeleportReturn()
