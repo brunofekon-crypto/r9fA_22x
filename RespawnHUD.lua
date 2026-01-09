@@ -1128,48 +1128,57 @@ local BotCore = (function()
                  if p:IsA("BasePart") then p.CanCollide = true end
              end
              
-             -- Lock Position & Spin with Jitter
-             myRoot.CFrame = tRoot.CFrame * CFrame.new(math.random()-0.5, math.random()-0.5, math.random()-0.5)
-             myRoot.AssemblyAngularVelocity = Vector3.new(200000, 200000, 200000) 
-             myRoot.AssemblyLinearVelocity = Vector3.zero
+             -- [PHYSICS OVERHAUL]
+             -- 1. Angular: MAX rotation
+             -- 2. Linear: HIGH UPWARD force (to lift them off ground)
+             -- 3. Offset: Jitter inside their torso
              
-             -- --- CRITICAL SAFETY CHECKS ---
+             myRoot.AssemblyAngularVelocity = Vector3.new(100000, 100000, 100000) 
+             myRoot.AssemblyLinearVelocity = Vector3.new(0, 5000, 0) -- Skyrocket Lift
              
-             -- 1. Void Safety (RELATIVE CHECK)
-             -- Only trigger if we have fallen more than 50 studs from where we started the attack.
-             -- This fixes issues on low-altitude maps.
-             local currentY = myRoot.Position.Y
-             local fallenDist = (flingStartHeight or currentY) - currentY
+             local rot = CFrame.Angles(0, math.rad(90*tick()), 0)
+             myRoot.CFrame = tRoot.CFrame * rot * CFrame.new(math.random(-1,1), math.random(-2,0), math.random(-1,1))
              
-             if fallenDist > 50 then
-                 warn("[BotSafety] Void/Fall Detected! (Fell " .. math.floor(fallenDist) .. " studs)")
-                 TeleportReturn()
-                 return
-             end
+             local flingDuration = tick() - flingStartTime
 
-             -- 2. Target Death
-             if tHum and tHum.Health <= 0 then
-                 warn("[BotAttack] Target Eliminated (Dead). Returning.")
-                 TeleportReturn()
-                 return
-             end
-
-             -- 3. Success Detection
-             local targetMovedDist = (tRoot.Position - lastTargetPos).Magnitude
-             local targetVelocity = tRoot.AssemblyLinearVelocity.Magnitude
+             -- --- SAFETY & VALIDATION ---
              
-             local isFar = targetMovedDist > 100
-             local isFast = targetVelocity > 1000 
-             local isGone = (tRoot.Position - myRoot.Position).Magnitude > 50 
+             -- [GRACE PERIOD]
+             -- Ignore void/death checks for the first 0.5s to allow physics to destabilize without aborting.
+             if flingDuration > 0.5 then
+             
+                 -- 1. Void Safety (RELATIVE CHECK)
+                 local currentY = myRoot.Position.Y
+                 local fallenDist = (flingStartHeight or currentY) - currentY
+                 
+                 if fallenDist > 50 then
+                     warn("[BotSafety] Void/Fall Detected! (Fell " .. math.floor(fallenDist) .. " studs)")
+                     TeleportReturn()
+                     return
+                 end
 
-             if isFar or (isFast and isGone) then
-                  warn("[BotAttack] Fling Successful! (Dist: " .. math.floor(targetMovedDist) .. ", Vel: " .. math.floor(targetVelocity) .. ")")
-                  TeleportReturn()
-                  return
+                 -- 2. Target Death
+                 if tHum and tHum.Health <= 0 then
+                     warn("[BotAttack] Target Eliminated (Dead). Returning.")
+                     TeleportReturn()
+                     return
+                 end
+                 
+                 -- 3. Success Detection
+                 local targetMovedDist = (tRoot.Position - lastTargetPos).Magnitude
+                 
+                 local isFar = targetMovedDist > 100
+                 local isGone = (tRoot.Position - myRoot.Position).Magnitude > 50 
+
+                 if isFar or isGone then
+                      warn("[BotAttack] Fling Successful! (Dist: " .. math.floor(targetMovedDist) .. ")")
+                      TeleportReturn()
+                      return
+                 end
              end
              
              -- [!] TIMEOUT
-             if (tick() - flingStartTime) > 5 then
+             if flingDuration > 5 then
                  warn("[BotAttack] Timeout (5s). Give up.")
                  TeleportReturn()
              end
