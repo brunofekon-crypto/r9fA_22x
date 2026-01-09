@@ -1098,52 +1098,47 @@ local BotCore = (function()
              myRoot.AssemblyAngularVelocity = Vector3.new(200000, 200000, 200000) -- ULTRA SPIN
              myRoot.AssemblyLinearVelocity = Vector3.zero
              
-             -- Validation: Did they die or fly away?
+             -- Validation Checks
              local targetMovedDist = (tRoot.Position - lastTargetPos).Magnitude
-             if targetMovedDist > 100 or (tHum and tHum.Health <= 0) then
-                 warn("[BotAttack] Target Neutralized! Returning.")
-                 currentFlingState = FlingState.RETURNING
+             local isVoid = myRoot.Position.Y < -50
+             local isDead = tHum and tHum.Health <= 0
+             local isFlung = targetMovedDist > 100
+             local isTimeout = (tick() - flingStartTime) > 5
+
+             if isVoid or isDead or isFlung or isTimeout then
+                 warn("[BotAttack] Target Neutralized or Void Safety! TP Returning.")
+                 
+                 -- TELEPORT RETURN (No Fly Back)
+                 local targetPlr = Players:FindFirstChild(currentTargetName)
+                 local ownerRoot = nil
+                 if targetPlr and targetPlr.Character then ownerRoot = getRoot(targetPlr.Character) end
+                 
+                 if ownerRoot then
+                     myRoot.CFrame = ownerRoot.CFrame * CFrame.new(0, 0, 5)
+                 end
+                 
+                 currentFlingState = FlingState.IDLE
+                 ResetPhysics()
+                 myHum.PlatformStand = false
                  return
-             end
-             
-             -- Timeout Safety (5s)
-             if tick() - flingStartTime > 5 then
-                 warn("[BotAttack] Fling Timeout. Returning.")
-                 currentFlingState = FlingState.RETURNING
              end
              
              lastTargetPos = tRoot.Position -- Update pos to track movement
 
-        -- [STATE: RETURNING] Fly back to Owner
+        -- [STATE: RETURNING] Fly back (Fallback / Deprecated by TP)
         elseif currentFlingState == FlingState.RETURNING then
+             -- We can keep this as a failsafe, or just TP. Let's TP for consistency.
              local targetPlr = Players:FindFirstChild(currentTargetName)
              local ownerRoot = nil
              if targetPlr and targetPlr.Character then ownerRoot = getRoot(targetPlr.Character) end
              
-             if not ownerRoot then
-                 -- Owner gone? Just stop.
-                 currentFlingState = FlingState.IDLE
-                 ResetPhysics()
-                 myHum.PlatformStand = false
-                 return
+             if ownerRoot then
+                 myRoot.CFrame = ownerRoot.CFrame * CFrame.new(0, 0, 5)
              end
              
-             local dist = (myRoot.Position - ownerRoot.Position).Magnitude
-             
-             if dist < 10 then
-                 -- Arrived Home
-                 currentFlingState = FlingState.IDLE
-                 ResetPhysics()
-                 myHum.PlatformStand = false
-                 warn("[BotAttack] Returned to Base.")
-             else
-                 -- Fly Back
-                 for _, p in pairs(myChar:GetChildren()) do if p:IsA("BasePart") then p.CanCollide = false end end
-                 myHum.PlatformStand = true
-                 local dir = (ownerRoot.Position - myRoot.Position).Unit
-                 myRoot.AssemblyLinearVelocity = dir * 60
-                 myRoot.CFrame = CFrame.new(myRoot.Position, ownerRoot.Position)
-             end
+             currentFlingState = FlingState.IDLE
+             ResetPhysics()
+             myHum.PlatformStand = false
         end
     end
 
