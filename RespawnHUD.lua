@@ -1128,23 +1128,51 @@ local BotCore = (function()
                  if p:IsA("BasePart") then p.CanCollide = true end
              end
              
-             -- [PHYSICS OVERHAUL]
-             -- 1. Angular: MAX rotation
-             -- 2. Linear: HIGH UPWARD force (to lift them off ground)
-             -- 3. Offset: Jitter inside their torso
+             -- [!] FORCE SIMULATION RADIUS (Network Ownership Trick)
+             -- Try to claim physics ownership of the area
+             pcall(function()
+                 settings().Physics.AllowSleep = false
+                 sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
+                 sethiddenproperty(LocalPlayer, "MaxSimulationRadius", math.huge)
+             end)
              
-             myRoot.AssemblyAngularVelocity = Vector3.new(100000, 100000, 100000) 
-             myRoot.AssemblyLinearVelocity = Vector3.new(0, 5000, 0) -- Skyrocket Lift
+             -- [!] ENABLE COLLISIONS FOR FLING TO WORK
+             for _, p in pairs(myChar:GetChildren()) do
+                 if p:IsA("BasePart") then 
+                     p.CanCollide = true 
+                     p.Velocity = Vector3.new(0,0,0) -- Reset standard velocity, rely on Assembly
+                 end
+             end
              
+             -- [PHYSICS OVERHAUL: THRASH MODE]
+             -- Instead of static jitter, we cycle positions to FORCE collision resolution.
+             -- 1. UP (Lift)
+             -- 2. DOWN (Smash)
+             -- 3. INSIDE (Explode)
+             
+             local phase = math.floor(tick() * 10) % 3 -- Switch 10 times a second
+             local offset = CFrame.new(0, 0, 0)
+             
+             if phase == 0 then
+                 offset = CFrame.new(0, -2, 0) -- Under feet (LIFT)
+             elseif phase == 1 then
+                 offset = CFrame.new(0, 2, 0) -- Over head (SMASH)
+             else
+                 offset = CFrame.new(0, 0, 0) -- Inside (Should eject)
+             end
+             
+             myRoot.AssemblyAngularVelocity = Vector3.new(0, 100000, 0) -- Pure Spinning
+             myRoot.AssemblyLinearVelocity = Vector3.new(0, 10000, 0) -- Skyrocket Up
+             
+             -- Apply Thrash
              local rot = CFrame.Angles(0, math.rad(90*tick()), 0)
-             myRoot.CFrame = tRoot.CFrame * rot * CFrame.new(math.random(-1,1), math.random(-2,0), math.random(-1,1))
+             myRoot.CFrame = tRoot.CFrame * rot * offset
              
              local flingDuration = tick() - flingStartTime
 
              -- --- SAFETY & VALIDATION ---
              
              -- [GRACE PERIOD]
-             -- Ignore void/death checks for the first 0.5s to allow physics to destabilize without aborting.
              if flingDuration > 0.5 then
              
                  -- 1. Void Safety (RELATIVE CHECK)
