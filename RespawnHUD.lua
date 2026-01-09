@@ -805,11 +805,21 @@ local BotCore = (function()
     local RunService = game:GetService("RunService")
     local LocalPlayer = Players.LocalPlayer
 
-    local currentTargetName = nil
-    
     -- State Flags
     local isFollowEnabled = false
     local isFlingEnabled = false
+    
+    -- Missile State Machine
+    local FlingState = {
+        IDLE = "IDLE",
+        APPROACH = "APPROACH",
+        FLINGING = "FLINGING",
+        RETURNING = "RETURNING"
+    }
+    local currentFlingState = FlingState.IDLE
+    local activeFlingTarget = nil
+    local flingStartTime = 0
+    local lastTargetPos = Vector3.zero
     
     local loopConnection = nil
     local lastPathTime = 0
@@ -931,184 +941,209 @@ local BotCore = (function()
     end
 
     local function UpdateBot()
-        -- Loop runs if EITHER is enabled. logic inside handles details.
-        
         local myChar = LocalPlayer.Character
         if not myChar then return end
         local myRoot = getRoot(myChar)
         local myHum = getHumanoid(myChar)
         if not myRoot or not myHum then return end
+        
+        -- Safe Helper to Reset Physics
+        local function ResetPhysics()
+             if myRoot.AssemblyAngularVelocity.Magnitude > 100 then
+                 myRoot.AssemblyAngularVelocity = Vector3.zero
+                 myRoot.AssemblyLinearVelocity = Vector3.zero
+             end
+             for _, p in pairs(myChar:GetChildren()) do
+                 if p:IsA("BasePart") then p.CanCollide = true end
+             end
+        end
 
-        ---------------------------------------------------
-        -- [!] FLING MISSILE LOGIC (Attack Mode)
-        -- Only runs if Fling Mode is explicitly ENABLED
-        ---------------------------------------------------
-        if isFlingEnabled then
-            local attackTarget = nil
-            for name, _ in pairs(FlingTargets) do
-                local enemy = Players:FindFirstChild(name)
-            if enemy and enemy.Character then
-                local eRoot = getRoot(enemy.Character)
-                if eRoot then
-                    local dist = (eRoot.Position - myRoot.Position).Magnitude
-                    if dist <= Config.VisionRadius then
-                        attackTarget = eRoot
-                        break
+        ------------------------------------------------------------------------
+        -- STATE MACHINE
+        ------------------------------------------------------------------------
+        
+        -- [STATE: IDLE] Guarding / Scanning
+        if currentFlingState == FlingState.IDLE then
+            if isFlingEnabled then
+                -- Scan for Targets
+                for name, _ in pairs(FlingTargets) do
+                    local enemy = Players:FindFirstChild(name)
+                    if enemy and enemy.Character then
+                        local eRoot = getRoot(enemy.Character)
+                        local eHum = getHumanoid(enemy.Character)
+                        if eRoot and eHum and eHum.Health > 0 then
+                            local dist = (eRoot.Position - myRoot.Position).Magnitude
+                            if dist <= Config.VisionRadius then
+                                -- >>> TRIGGER ATTACK >>>
+                                activeFlingTarget = enemy
+                                currentFlingState = FlingState.APPROACH
+                                flingStartTime = tick()
+                                warn("[BotAttack] Target Acquired: " .. name)
+                                return
+                            end
+                        end
                     end
                 end
             end
-        end
+            
+            -- NORMAL GUARD BEHAVIOR (Follow Logic)
+            ResetPhysics()
+            
+            if not currentTargetName or currentTargetName == "Nenhum" then return end
+            local targetPlr = Players:FindFirstChild(currentTargetName)
+            if not targetPlr or not targetPlr.Character then return end
+            local targetRoot = getRoot(targetPlr.Character)
+            if not targetRoot then return end
 
-            if attackTarget then
-                if myHum.Sit then myHum.Sit = false end
-                for _, p in pairs(myChar:GetChildren()) do
-                    if p:IsA("BasePart") then p.CanCollide = false end
-                end
-                myRoot.CFrame = attackTarget.CFrame 
-                myRoot.AssemblyAngularVelocity = Vector3.new(90000, 90000, 90000) 
-                myRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                currentWaypoints = nil
+            local dist = (myRoot.Position - targetRoot.Position).Magnitude
+
+            -- Seat Safety
+            if myHum.Sit then
+                if dist > Config.MaxDistance or dist > Config.TeleportDistance then myHum.Sit = false; myHum.Jump = true return end
+            end
+
+            -- Teleport Fallback
+            if dist > Config.TeleportDistance then
+                if myRoot:FindFirstChild("SeatWeld") then myRoot.SeatWeld:Destroy() end
+                myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 5)
+                wanderingTarget = nil; currentWaypoints = nil
                 return
             end
-        end -- End of isFlingEnabled check
 
-        -- Reset Physics if logic fell through
-        if myRoot.AssemblyAngularVelocity.Magnitude > 1000 then
-                myRoot.AssemblyAngularVelocity = Vector3.new(0,0,0)
-        end
-
-        if not currentTargetName or currentTargetName == "Nenhum" then return end
-        
-        local targetPlr = Players:FindFirstChild(currentTargetName)
-        if not targetPlr or not targetPlr.Character then return end
-
-        local targetRoot = getRoot(targetPlr.Character)
-        
-        if not targetRoot then return end
-
-        local dist = (myRoot.Position - targetRoot.Position).Magnitude
-        
-        -- Heartbeat Log (Throttled)
-        if tick() - lastDebugPrint > 2 then
-            -- warn("[BotStatus] Dist: " .. math.floor(dist) .. " | State: " .. (dist > Config.MaxDistance and "CHASE" or "IDLE"))
-            lastDebugPrint = tick()
-        end
-
-        -- 0. Seat Handling (Prevent Glitches)
-        if myHum.Sit then
-            -- If we need to move or are too far, force stand up
-            if dist > Config.MaxDistance or dist > Config.TeleportDistance then
-                warn("[BotAction] Sitting detected. Standing up...")
-                myHum.Sit = false
-                myHum.Jump = true
-                return -- Wait for physics to process stand up
-            end
-        end
-
-        -- 1. Stuck & Teleport Safety
-        if dist > Config.TeleportDistance then
-            -- Double check we aren't attached to something (like a seat glitch)
-            if myRoot:FindFirstChild("SeatWeld") then
-                myRoot.SeatWeld:Destroy()
-            end
-            
-            myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 5)
-            wanderingTarget = nil
-            currentWaypoints = nil
-            return
-        end
-
-        if (myRoot.Position - lastPosition).Magnitude < 0.2 and dist > 5 then
-            stuckTimer = stuckTimer + RunService.Heartbeat:Wait()
-            if stuckTimer > 4 then -- Increased from 2 to 4s
-                warn("[BotAction] Stuck! Jumping to unstuck.")
-                myHum.Jump = true
-                -- Removed CFrame teleport (caused glitching)
-                stuckTimer = 0
-            end
-        else
-            stuckTimer = 0
-        end
-        lastPosition = myRoot.Position
-
-
-        -- 2. State Machine: CHASE vs IDLE (Wander)
-        if dist > Config.MaxDistance then
-            -- >>> CHASE MODE <<<
-            wanderingTarget = nil -- Reset wander info
-            
-            local goalPos = targetRoot.Position
-            
-            -- Pathfinding RECALC
-            if tick() - lastPathTime > Config.PathUpdateInterval then
-                lastPathTime = tick()
-                local path = PathfindingService:CreatePath({
-                    AgentRadius = 2, AgentHeight = 5, AgentCanJump = true, AgentJumpHeight = 12, WaypointSpacing = 6
-                })
-                pcall(function() path:ComputeAsync(myRoot.Position, goalPos) end)
-                
-                if path.Status == Enum.PathStatus.Success then
-                    currentWaypoints = path:GetWaypoints()
-                    currentWaypointIndex = 2
-                else
-                    currentWaypoints = nil
-                    MoveTo(goalPos) -- Direct fallback
+            -- Wander vs Chase
+            if dist > Config.MaxDistance then
+                 -- Chase Logic
+                 wanderingTarget = nil
+                 local goalPos = targetRoot.Position
+                 if tick() - lastPathTime > Config.PathUpdateInterval then
+                     lastPathTime = tick()
+                     local path = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true})
+                     pcall(function() path:ComputeAsync(myRoot.Position, goalPos) end)
+                     if path.Status == Enum.PathStatus.Success then
+                         currentWaypoints = path:GetWaypoints()
+                         currentWaypointIndex = 2
+                     else
+                         currentWaypoints = nil; MoveTo(goalPos)
+                     end
+                 end
+                 
+                 if currentWaypoints and currentWaypointIndex <= #currentWaypoints then
+                     local wp = currentWaypoints[currentWaypointIndex]
+                     local avoidance = GetObstacleAvoidanceVector(myRoot)
+                     if avoidance == "JUMP" then myHum.Jump = true; myHum:MoveTo(wp.Position)
+                     elseif avoidance then
+                         local desiredDir = (wp.Position - myRoot.Position).Unit
+                         local finalDir = (desiredDir + avoidance).Unit
+                         myHum:MoveTo(myRoot.Position + finalDir * 5)
+                     else
+                         if wp.Action == Enum.PathWaypointAction.Jump then myHum.Jump = true end
+                         myHum:MoveTo(wp.Position)
+                     end
+                     if (myRoot.Position - wp.Position).Magnitude < 5 then currentWaypointIndex = currentWaypointIndex + 1 end
+                 else
+                     MoveTo(goalPos)
+                 end
+                 
+            elseif dist < Config.MinDistance then
+                -- Wander Logic
+                if tick() < wanderWaitTime then myHum:MoveTo(myRoot.Position) return end
+                if not wanderingTarget or (myRoot.Position - wanderingTarget).Magnitude < 4 then
+                    wanderingTarget = GetRandomWanderPoint(targetRoot.Position)
+                    wanderWaitTime = tick() + math.random(1, 3)
                 end
-            end
-
-            -- Follow Path
-            if currentWaypoints and currentWaypointIndex <= #currentWaypoints then
-                local wp = currentWaypoints[currentWaypointIndex]
-                
-                -- Steering / Obstacle Avoidance
                 local avoidance = GetObstacleAvoidanceVector(myRoot)
-                if avoidance == "JUMP" then
-                    myHum.Jump = true
-                    myHum:MoveTo(wp.Position)
-                elseif avoidance then
-                    -- Blend path dir with avoidance dir
-                    local desiredDir = (wp.Position - myRoot.Position).Unit
-                    local finalDir = (desiredDir + avoidance).Unit
-                    myHum:MoveTo(myRoot.Position + finalDir * 5)
-                else
-                    if wp.Action == Enum.PathWaypointAction.Jump then myHum.Jump = true end
-                    myHum:MoveTo(wp.Position)
-                end
-                
-                if (myRoot.Position - wp.Position).Magnitude < 5 then
-                    currentWaypointIndex = currentWaypointIndex + 1
-                end
-            else
-                MoveTo(goalPos)
+                if avoidance == "JUMP" then myHum.Jump = true end
+                myHum:MoveTo(wanderingTarget)
             end
 
-        elseif dist < Config.MinDistance then
-            -- >>> IDLE / WANDER MODE (Human-Like) <<<
-            
-            -- If we shouldn't wander yet (waiting)
-            if tick() < wanderWaitTime then
-                myHum:MoveTo(myRoot.Position) -- Stand still (pause)
-                return
-            end
+        -- [STATE: APPROACH] Flying to Target
+        elseif currentFlingState == FlingState.APPROACH then
+             if not activeFlingTarget or not activeFlingTarget.Character then
+                 currentFlingState = FlingState.RETURNING
+                 return
+             end
+             local tRoot = getRoot(activeFlingTarget.Character)
+             if not tRoot then currentFlingState = FlingState.RETURNING return end
+             
+             -- Noclip & Float
+             if myHum.Sit then myHum.Sit = false end
+             for _, p in pairs(myChar:GetChildren()) do if p:IsA("BasePart") then p.CanCollide = false end }
+             myHum.PlatformStand = true
+             
+             local dist = (myRoot.Position - tRoot.Position).Magnitude
+             
+             if dist < 5 then
+                 -- Arrived!
+                 currentFlingState = FlingState.FLINGING
+                 lastTargetPos = tRoot.Position
+                 flingStartTime = tick()
+             else
+                 -- Fly towards
+                 local dir = (tRoot.Position - myRoot.Position).Unit
+                 myRoot.AssemblyLinearVelocity = dir * 80 -- Controlled speed
+                 myRoot.CFrame = CFrame.new(myRoot.Position, tRoot.Position)
+             end
 
-            -- Generate new point if needed
-            if not wanderingTarget or (myRoot.Position - wanderingTarget).Magnitude < 4 then
-                wanderingTarget = GetRandomWanderPoint(targetRoot.Position)
-                wanderWaitTime = tick() + math.random(1, 3) -- Pause after reaching
-                
-                -- Random "Look Around" (rotate root)
-                if math.random() > 0.5 then
-                    myRoot.CFrame = CFrame.new(myRoot.Position, wanderingTarget)
-                end
-            end
-            
-            -- Simple move to wander point (no pathfinding needed for short dists usually, but could add if complex)
-            local avoidance = GetObstacleAvoidanceVector(myRoot)
-            if avoidance == "JUMP" then
-                 myHum.Jump = true
-            end
-            
-            myHum:MoveTo(wanderingTarget)
+        -- [STATE: FLINGING] Spin & Neutralize
+        elseif currentFlingState == FlingState.FLINGING then
+             if not activeFlingTarget or not activeFlingTarget.Character then
+                 currentFlingState = FlingState.RETURNING
+                 return
+             end
+             local tRoot = getRoot(activeFlingTarget.Character)
+             local tHum = getHumanoid(activeFlingTarget.Character)
+
+             -- Lock Position & Spin
+             myRoot.CFrame = tRoot.CFrame
+             myRoot.AssemblyAngularVelocity = Vector3.new(200000, 200000, 200000) -- ULTRA SPIN
+             myRoot.AssemblyLinearVelocity = Vector3.zero
+             
+             -- Validation: Did they die or fly away?
+             local targetMovedDist = (tRoot.Position - lastTargetPos).Magnitude
+             if targetMovedDist > 100 or (tHum and tHum.Health <= 0) then
+                 warn("[BotAttack] Target Neutralized! Returning.")
+                 currentFlingState = FlingState.RETURNING
+                 return
+             end
+             
+             -- Timeout Safety (5s)
+             if tick() - flingStartTime > 5 then
+                 warn("[BotAttack] Fling Timeout. Returning.")
+                 currentFlingState = FlingState.RETURNING
+             end
+             
+             lastTargetPos = tRoot.Position -- Update pos to track movement
+
+        -- [STATE: RETURNING] Fly back to Owner
+        elseif currentFlingState == FlingState.RETURNING then
+             local targetPlr = Players:FindFirstChild(currentTargetName)
+             local ownerRoot = nil
+             if targetPlr and targetPlr.Character then ownerRoot = getRoot(targetPlr.Character) end
+             
+             if not ownerRoot then
+                 -- Owner gone? Just stop.
+                 currentFlingState = FlingState.IDLE
+                 ResetPhysics()
+                 myHum.PlatformStand = false
+                 return
+             end
+             
+             local dist = (myRoot.Position - ownerRoot.Position).Magnitude
+             
+             if dist < 10 then
+                 -- Arrived Home
+                 currentFlingState = FlingState.IDLE
+                 ResetPhysics()
+                 myHum.PlatformStand = false
+                 warn("[BotAttack] Returned to Base.")
+             else
+                 -- Fly Back
+                 for _, p in pairs(myChar:GetChildren()) do if p:IsA("BasePart") then p.CanCollide = false end }
+                 myHum.PlatformStand = true
+                 local dir = (ownerRoot.Position - myRoot.Position).Unit
+                 myRoot.AssemblyLinearVelocity = dir * 60
+                 myRoot.CFrame = CFrame.new(myRoot.Position, ownerRoot.Position)
+             end
         end
     end
 
