@@ -2436,12 +2436,21 @@ end)
 
 -- >>> TAB: PRE-CONFIGS (BotMe)
 local BotMe = Win:Tab("BotMe")
+
+-- [NEW] BOTS GROUP
+local BotsGroup = BotMe:Group("Bots")
+
+BotsGroup:Toggle("Seguir Player", false, function(v)
+    BotCore:SetEnabled(v)
+end)
+
+-- [EXISTING] CONFIG GROUP
 local BotGroup = BotMe:Group("Gerenciamento de Bot")
 
 local function GetPlayersList()
     local list = {}
     for _, v in pairs(Players:GetPlayers()) do
-        if v ~= player then
+        if v ~= LocalPlayer then
             table.insert(list, v.Name)
         end
     end
@@ -2460,10 +2469,6 @@ task.spawn(function()
     end
 end)
 
-BotGroup:Toggle("Ativar Bot (IA)", false, function(v)
-    BotCore:SetEnabled(v)
-end)
-
 BotGroup:Slider("Distância (Min/Max)", 6, 30, 10, function(v)
     BotCore:SetDistances(v, v+5)
 end, function(v) return v .. "/" .. (v+5) end)
@@ -2476,10 +2481,10 @@ BotGroup:Slider("Raio de Visão (Ataque)", 10, 500, 50, function(v)
     BotCore:SetVisionRadius(v)
 end)
 
-BotGroup:InteractiveList("Alvo(s) Fling (Add Nome)", function(text)
-    BotCore:AddFlingTarget(text)
-end, function(text)
-    BotCore:RemoveFlingTarget(text)
+BotGroup:InteractiveList("Alvo(s) Fling", GetPlayersList, function(name)
+    BotCore:AddFlingTarget(name)
+end, function(name)
+    BotCore:RemoveFlingTarget(name)
 end)
 
 -- >>> TAB: CONFIGURAÇÕES
